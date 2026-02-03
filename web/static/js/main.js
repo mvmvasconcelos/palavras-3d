@@ -36,8 +36,14 @@ function initViewer() {
     controls.enableDamping = true;
 
     // Grid Helper
-    const gridHelper = new THREE.GridHelper(200, 20, 0x444444, 0x333333);
+    // 300mm size, 30 divisions = 10mm per square
+    const gridHelper = new THREE.GridHelper(300, 30, 0x888888, 0x333333);
     scene.add(gridHelper);
+
+    // Axes Helper (X=Red, Y=Green, Z=Blue)
+    // 50mm length
+    const axesHelper = new THREE.AxesHelper(50);
+    scene.add(axesHelper);
 
     // Resize Handler
     window.addEventListener('resize', onWindowResize, false);
@@ -195,33 +201,222 @@ function triggerGeneration() {
     })
         .then(response => response.json())
         .then(data => {
-            if (data.success) {
-                clearMeshes();
-                loadSTL(data.base_url, payload.base_color);
-                loadSTL(data.text_url, payload.letters_color);
+            if (data.error) {
+                console.error('Error generating model: ' + data.error);
+                loading.style.display = 'none';
+                return;
+            }
 
+            clearMeshes();
+
+            // Load both parts and wait for them
+            const p1 = loadSTL(data.base_url, payload.base_color);
+            const p2 = loadSTL(data.text_url, payload.letters_color);
+
+            Promise.all([p1, p2]).then(() => {
+                alignAllMeshesToOrigin();
+                updateModelDimensions();
+
+                loading.style.display = 'none';
                 downloadBtn.href = data.full_url;
                 downloadBtn.style.display = 'block';
-            } else {
-                console.error('Error generating model: ' + data.error);
-            }
+            });
         })
         .catch(err => {
             console.error('Network error: ' + err);
-        })
-        .finally(() => {
             loading.style.display = 'none';
         });
 }
 
-document.getElementById('generateBtn').addEventListener('click', () => {
-    triggerGeneration();
-});
+function loadSTL(url, colorHex) {
+    return new Promise((resolve, reject) => {
+        const loader = new THREE.STLLoader();
+        loader.load(url, function (geometry) {
+            const material = new THREE.MeshPhongMaterial({
+                color: new THREE.Color(colorHex),
+                specular: 0x111111,
+                shininess: 200
+            });
 
-// Initialize on load
-initViewer();
+            const mesh = new THREE.Mesh(geometry, material);
+            mesh.rotation.x = -Math.PI / 2; // Lay flat on bed
 
-// 2D Preview Logic
+            scene.add(mesh);
+            meshes.push(mesh);
+            resolve(mesh);
+        }, undefined, function (error) {
+            reject(error);
+        });
+    });
+}
+
+function alignAllMeshesToOrigin() {
+    if (meshes.length === 0) return;
+
+    // 1. Calculate combined bounding box of all meshes in World Space
+    const combinedBox = new THREE.Box3();
+    meshes.forEach(mesh => {
+        mesh.updateMatrixWorld();
+        combinedBox.expandByObject(mesh);
+    });
+
+    // 2. Calculate offsets to bring min X and min Z (depth) to 0
+    // Y is up in ThreeJS. We want it sitting on the grid (min Y = 0).
+    const minX = combinedBox.min.x;
+    const minY = combinedBox.min.y; // Height from floor
+    const minZ = combinedBox.min.z; // Depth
+
+    // 3. Apply offset to all meshes
+    meshes.forEach(mesh => {
+        mesh.position.x -= minX;
+        mesh.position.y -= minY;
+        mesh.position.z -= minZ;
+
+        // Also move Z slightly to center it? 
+        // User asked for "0,0 going to right". 
+        // Usually implies X=0 is left edge. 
+        // Z=0 is usually back or front edge. Let's make it minZ=0 so it sits in the positive quadrant.
+    });
+
+    fitCameraToObject();
+}
+
+function fitCameraToObject() {
+    if (meshes.length === 0) return;
+
+    const box = new THREE.Box3();
+    meshes.forEach(mesh => {
+        mesh.updateMatrixWorld();
+        box.expandByObject(mesh);
+    });
+
+    const size = new THREE.Vector3();
+    const center = new THREE.Vector3();
+    box.getSize(size);
+    box.getCenter(center);
+
+    const maxSize = Math.max(size.x, size.y, size.z);
+
+    // Draw Ruler
+    // Place it "behind" the object (minZ - 10mm)
+    // And start at minX
+    drawRuler(0, size.x, box.min.z - 15);
+
+    if (maxSize === 0) {
+        console.warn("Model size is 0, skipping camera fit");
+        return;
+    }
+
+    const fitHeightDistance = maxSize / (2 * Math.atan(Math.PI * camera.fov / 360));
+    const fitWidthDistance = fitHeightDistance / camera.aspect;
+    const distance = 1.2 * Math.max(fitHeightDistance, fitWidthDistance);
+
+    const direction = controls.target.clone().sub(camera.position).normalize().multiplyScalar(distance);
+
+    controls.maxDistance = distance * 10;
+    controls.target.copy(center);
+
+    // Position camera to look at the object nicely from an angle
+    camera.near = distance / 100;
+    camera.far = distance * 100;
+    camera.updateProjectionMatrix();
+
+    camera.position.set(center.x, center.y + distance * 0.5, center.z + distance);
+    camera.lookAt(center);
+
+    controls.update();
+}
+
+
+// Ruler Logic
+let currentRuler = null;
+
+function createTextSprite(message) {
+    const canvas = document.createElement('canvas');
+    const size = 128;
+    canvas.width = size;
+    canvas.height = size;
+
+    const ctx = canvas.getContext('2d');
+
+    // Transparent background
+    ctx.fillStyle = "rgba(0, 0, 0, 0)";
+    ctx.clearRect(0, 0, size, size);
+
+    // Text
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = "#ffffff"; // White text
+    ctx.font = "bold 40px Arial"; // Smaller font
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = 'black'; // Keep outline for contrast
+    ctx.strokeText(message, size / 2, size / 2);
+    ctx.fillText(message, size / 2, size / 2);
+
+    const texture = new THREE.CanvasTexture(canvas);
+    const material = new THREE.SpriteMaterial({ map: texture, depthTest: false });
+    const sprite = new THREE.Sprite(material);
+
+    // Scale: 10mm x 10mm (Smaller visual footprint)
+    sprite.scale.set(10, 10, 1);
+    sprite.center.set(0.5, 0.5);
+    return sprite;
+}
+
+function drawRuler(startX, width, zPos) {
+    if (currentRuler) {
+        scene.remove(currentRuler);
+        currentRuler = null;
+    }
+
+    const group = new THREE.Group();
+
+    // Ruler Line (White)
+    // Round up width to nearest 10
+    const rulerLen = Math.ceil(width / 10) * 10;
+
+    const geometry = new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(startX, 0, zPos),
+        new THREE.Vector3(startX + rulerLen, 0, zPos)
+    ]);
+    const material = new THREE.LineBasicMaterial({ color: 0xffffff });
+    const line = new THREE.Line(geometry, material);
+    group.add(line);
+
+    // Ticks and Numbers
+    for (let i = 0; i <= rulerLen; i += 10) {
+        const x = startX + i;
+
+        // Tick mark
+        const tickHeight = (i % 50 === 0) ? 5 : 2.5; // Long tick every 50mm
+        const tickGeo = new THREE.BufferGeometry().setFromPoints([
+            new THREE.Vector3(x, 0, zPos),
+            new THREE.Vector3(x, 0, zPos - tickHeight) // Draw tick "backwards" or "up" on grid? let's draw flat on Z
+            // Actually user wants it "above". If we draw flat on XZ plane:
+            // Let's stick tick pointing "back" (negative Z)
+        ]);
+        const tickLine = new THREE.Line(tickGeo, material);
+        group.add(tickLine);
+
+        // Number
+        if (i > 0 && i % 10 === 0) {
+            const sprite = createTextSprite(i + "mm");
+
+            // Position sprite:
+            // X = tick position
+            // Y = 0.5 (slightly above ground)
+            // Z = zPos - tickHeight - 5 (further "back" / "above" the tick tip)
+
+            // Use a larger offset for Z to make it clear
+            sprite.position.set(x, 0.5, zPos - tickHeight - 5);
+            group.add(sprite);
+        }
+    }
+
+    scene.add(group);
+    currentRuler = group;
+}
+
 function update2DPreview() {
     const textCtx = document.getElementById('preview-text');
     const line1 = document.getElementById('text_line_1').value || "";
@@ -325,6 +520,13 @@ allInputs.forEach(input => {
     input.addEventListener('change', update2DPreview);
 });
 
-// Trigger initial
+// Trigger initial 2D preview
 update2DPreview();
-document.getElementById('generateBtn').click();
+
+// Restore the Generate Button Listener!
+document.getElementById('generateBtn').addEventListener('click', () => {
+    triggerGeneration();
+});
+
+// Initialize 3D Viewer on load
+initViewer();

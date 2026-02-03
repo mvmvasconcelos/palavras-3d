@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Gerador de nome paramétrico</title>
+    <title>Gerador de STL paramétrico de nomes</title>
     <link rel="stylesheet" href="/static/css/style.css">
     <!-- Google Fonts -->
     <link
@@ -21,10 +21,11 @@
         <!-- Sidebar Controls -->
         <aside class="sidebar">
             <div class="header">
-                <h2>Gerador de nome paramétrico</h2>
+                <h2>Gerador de STL paramétrico de nomes</h2>
                 <div class="model-info">
                     <h3>Topper de nome personalizável</h3>
-                    <p>by Vinicius Vasconcelos</p>
+                    <p>by <a href="https://github.com/mvmvasconcelos" target="_blank" rel="noopener noreferrer">Vinicius
+                            Vasconcelos</a></p>
                 </div>
             </div>
 
@@ -188,7 +189,9 @@
         </main>
     </div>
 
-    <script src="/static/js/main.js"></script>
+    <script>
+        document.write('<script src="/static/js/main.js?v=' + Date.now() + '"><\/script>');
+    </script>
 </body>
 
 </html>
