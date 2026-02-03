@@ -1,0 +1,330 @@
+// Three.js SCENE SETUP
+let scene, camera, renderer, controls;
+let currentMesh = null;
+let meshes = [];
+
+function initViewer() {
+    const container = document.getElementById('viewer');
+
+    // Scene
+    scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x222222);
+
+    // Lights
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+    scene.add(ambientLight);
+
+    const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+    dirLight.position.set(10, 20, 10);
+    scene.add(dirLight);
+
+    const backLight = new THREE.DirectionalLight(0xffffff, 0.3);
+    backLight.position.set(-10, -10, -10);
+    scene.add(backLight);
+
+    // Camera
+    camera = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 1, 1000);
+    camera.position.set(0, 50, 100);
+
+    // Renderer
+    renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(container.clientWidth, container.clientHeight);
+    container.appendChild(renderer.domElement);
+
+    // Controls
+    controls = new THREE.OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+
+    // Grid Helper
+    const gridHelper = new THREE.GridHelper(200, 20, 0x444444, 0x333333);
+    scene.add(gridHelper);
+
+    // Resize Handler
+    window.addEventListener('resize', onWindowResize, false);
+
+    animate();
+}
+
+function onWindowResize() {
+    const container = document.getElementById('viewer');
+    camera.aspect = container.clientWidth / container.clientHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(container.clientWidth, container.clientHeight);
+}
+
+function animate() {
+    requestAnimationFrame(animate);
+    controls.update();
+    renderer.render(scene, camera);
+}
+
+function clearMeshes() {
+    meshes.forEach(mesh => {
+        scene.remove(mesh);
+        mesh.geometry.dispose();
+        mesh.material.dispose();
+    });
+    meshes = [];
+}
+
+function loadSTL(url, colorHex) {
+    const loader = new THREE.STLLoader();
+
+    loader.load(url, function (geometry) {
+        const material = new THREE.MeshPhongMaterial({
+            color: new THREE.Color(colorHex),
+            specular: 0x111111,
+            shininess: 200
+        });
+
+        const mesh = new THREE.Mesh(geometry, material);
+
+        // We do NOT center each mesh individually anymore, or they will misalign.
+        // We rely on OpenSCAD coordinates being correct relative to origin (0,0,0).
+        // OR better: Compute bounding box of the FIRST loaded mesh (Base) and adjust camera, 
+        // but for now let's just rotate them to stand up.
+
+        mesh.rotation.x = -Math.PI / 2;
+
+        scene.add(mesh);
+        meshes.push(mesh);
+
+        updateModelDimensions();
+    });
+}
+
+function updateModelDimensions() {
+    if (meshes.length === 0) return;
+
+    const box = new THREE.Box3();
+    meshes.forEach(mesh => {
+        // We need to account for the rotation we applied (x = -90deg)
+        // ensure world matrix is up to date
+        mesh.updateMatrixWorld();
+        box.expandByObject(mesh);
+    });
+
+    const size = new THREE.Vector3();
+    box.getSize(size);
+
+    // After rotation:
+    // visual X is Width
+    // visual Y is Depth (Height on screen) -> OpenSCAD Y
+    // visual Z is Thickness -> OpenSCAD Z
+
+    // We want X and Y from OpenSCAD perspective, which correspond to X and Y in ThreeJS world (because we rotated X by -90, so Z becomes Y-up... wait)
+    // Mesh geometry is (x, y, z).
+    // Rotation X -90 => (x, z, -y).
+    // So World X = Geometry X.
+    // World Y = Geometry Z.
+    // World Z = -Geometry Y.
+
+    // Actually, bounding box on the rotated object gives World AABB.
+    // Width (X) = size.x
+    // "Height" (Y onscreen) = size.y (This is OpenSCAD Z / Thickness)
+    // "Length" (Z onscreen) = size.z (This is OpenSCAD Y)
+
+    // User wants "Comprimento e Largura". 
+    // Usually X is Length (Text width), Y is Height (Text height).
+    // Z is Thickness.
+
+    // So dimensions are size.x and size.z (in World coordinates, since we rotated it to stand up).
+    // Wait, if we rotated it to stand up, Y is up.
+    // OpenSCAD Z (Thickness) -> ThreeJS Y.
+    // OpenSCAD Y (Text height) -> ThreeJS Z (Depth).
+    // OpenSCAD X (Text width) -> ThreeJS X.
+
+    const width = size.x.toFixed(1);  // Text Length
+    const height = size.z.toFixed(1); // Text Height (Y in scad)
+
+    // User likely considers "Comprimento" = left-to-right (X)
+    // "Largura" = vertical (Y in scad, Z in viewer)
+
+    const infoDiv = document.getElementById('dimensions-info');
+    const dimsVal = document.getElementById('dims-val');
+
+    dimsVal.textContent = `${width}mm x ${height}mm`;
+    infoDiv.style.display = 'block';
+}
+
+// UI LOGIC
+function triggerGeneration() {
+    const loading = document.getElementById('loading');
+    const downloadBtn = document.getElementById('downloadBtn');
+    const dimsInfo = document.getElementById('dimensions-info');
+
+    loading.style.display = 'flex';
+    downloadBtn.style.display = 'none';
+    dimsInfo.style.display = 'none';
+
+    // Construct font name
+    const family = document.getElementById('font_family').value;
+    const isBold = document.getElementById('font_bold').checked;
+    const isItalic = document.getElementById('font_italic').checked;
+
+    let style = "";
+    if (isBold && isItalic) style = ":style=Bold Italic";
+    else if (isBold) style = ":style=Bold";
+    else if (isItalic) style = ":style=Italic";
+
+    const fontName = family + style;
+
+    const payload = {
+        text_line_1: document.getElementById('text_line_1').value,
+        text_line_2: document.getElementById('text_line_2').value,
+        text_size_1: parseFloat(document.getElementById('text_size_1').value),
+        text_size_2: parseFloat(document.getElementById('text_size_2').value),
+        font_name: fontName,
+        // text_size: parseFloat(document.getElementById('text_size').value), // Removed
+        letter_height: parseFloat(document.getElementById('letter_height').value),
+        base_height: parseFloat(document.getElementById('base_height').value),
+        outline_margin: parseFloat(document.getElementById('outline_margin').value),
+        spacing: parseFloat(document.getElementById('spacing').value),
+        line_spacing: parseFloat(document.getElementById('line_spacing').value),
+        hole_orientation: document.getElementById('hole_orientation').value,
+        hole_type: document.getElementById('hole_type').value,
+        hole_diameter: parseFloat(document.getElementById('hole_diameter').value),
+        base_color: document.getElementById('base_color').value,
+        letters_color: document.getElementById('letters_color').value
+    };
+
+    fetch('/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                clearMeshes();
+                loadSTL(data.base_url, payload.base_color);
+                loadSTL(data.text_url, payload.letters_color);
+
+                downloadBtn.href = data.full_url;
+                downloadBtn.style.display = 'block';
+            } else {
+                console.error('Error generating model: ' + data.error);
+            }
+        })
+        .catch(err => {
+            console.error('Network error: ' + err);
+        })
+        .finally(() => {
+            loading.style.display = 'none';
+        });
+}
+
+document.getElementById('generateBtn').addEventListener('click', () => {
+    triggerGeneration();
+});
+
+// Initialize on load
+initViewer();
+
+// 2D Preview Logic
+function update2DPreview() {
+    const textCtx = document.getElementById('preview-text');
+    const line1 = document.getElementById('text_line_1').value || "";
+    const line2 = document.getElementById('text_line_2').value || "";
+
+    const size1 = parseFloat(document.getElementById('text_size_1').value) || 12;
+    const size2 = parseFloat(document.getElementById('text_size_2').value) || 12;
+
+    const family = document.getElementById('font_family').value;
+    const isBold = document.getElementById('font_bold').checked;
+    const isItalic = document.getElementById('font_italic').checked;
+
+    const baseColor = document.getElementById('base_color').value;
+    const textColor = document.getElementById('letters_color').value;
+    const outlineMargin = parseFloat(document.getElementById('outline_margin').value);
+    const spacing = parseFloat(document.getElementById('spacing').value); // Letter spacing
+
+    // Line spacing input is a multiplier (e.g. 1.0, 1.2). 
+    // In CSS line-height can be unitless acting as multiplier.
+    const lineSpacingMult = parseFloat(document.getElementById('line_spacing').value);
+
+    // Update display for range inputs
+    document.getElementById('spacing-val').textContent = document.getElementById('spacing').value;
+    document.getElementById('line_spacing-val').textContent = document.getElementById('line_spacing').value;
+
+    // Clear current content
+    textCtx.innerHTML = '';
+
+    // We need a container that allows line stacking. 
+    // Flex column is good.
+    textCtx.style.display = 'flex';
+    textCtx.style.flexDirection = 'column';
+    textCtx.style.alignItems = 'center';
+    textCtx.style.justifyContent = 'center';
+
+    // Base visual scale factor to make it look decent on screen (12mm -> ~40px ?)
+    const scaleFactor = 4.0;
+
+    // Helper to create line element
+    function createLine(text, size) {
+        const div = document.createElement('div');
+        div.textContent = text || '\u00A0'; // Non-breaking space if empty to hold height
+
+        // Font Styles
+        div.style.fontFamily = `"${family}", "Comic Neue", cursive`;
+        div.style.fontWeight = isBold ? 'bold' : 'normal';
+        div.style.fontStyle = isItalic ? 'italic' : 'normal';
+        div.style.whiteSpace = "pre"; // Preserve multiple spaces
+
+        // Colors
+        div.style.color = textColor;
+        div.style.webkitTextStroke = `${outlineMargin * 1.5}px ${baseColor}`; // Visual approx
+
+        // Size
+        div.style.fontSize = (size * scaleFactor) + "px";
+
+        // Letter Spacing
+        // approximate: (spacing - 1.0) * fontSize * factor
+        const letterSpacingPx = (spacing - 1.0) * (size * scaleFactor) * 0.3;
+        div.style.letterSpacing = letterSpacingPx + "px";
+
+        // Line Height / Spacing
+        // If we use block elements, margin-bottom or line-height works.
+        // line-height: 1.0 is tight.
+        div.style.lineHeight = lineSpacingMult;
+
+        return div;
+    }
+
+    if (line1 || (!line1 && !line2)) {
+        textCtx.appendChild(createLine(line1, size1));
+    }
+
+    if (line2) {
+        textCtx.appendChild(createLine(line2, size2));
+    }
+}
+
+// Add listeners to new inputs
+document.getElementById('text_line_1').addEventListener('input', update2DPreview);
+document.getElementById('text_line_2').addEventListener('input', update2DPreview);
+document.getElementById('text_size_1').addEventListener('input', update2DPreview); // Just triggers update
+document.getElementById('text_size_2').addEventListener('input', update2DPreview);
+
+document.getElementById('font_family').addEventListener('change', update2DPreview);
+document.getElementById('font_bold').addEventListener('change', update2DPreview);
+document.getElementById('font_italic').addEventListener('change', update2DPreview);
+document.getElementById('base_color').addEventListener('input', update2DPreview);
+document.getElementById('letters_color').addEventListener('input', update2DPreview);
+document.getElementById('outline_margin').addEventListener('input', update2DPreview);
+document.getElementById('spacing').addEventListener('input', update2DPreview);
+document.getElementById('line_spacing').addEventListener('input', update2DPreview);
+
+// Initial call
+update2DPreview();
+
+// Attach listener for 2D preview (Instant)
+const allInputs = document.querySelectorAll('input, select');
+allInputs.forEach(input => {
+    input.addEventListener('input', update2DPreview);
+    input.addEventListener('change', update2DPreview);
+});
+
+// Trigger initial
+update2DPreview();
+document.getElementById('generateBtn').click();

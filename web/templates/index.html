@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gerador de nome paramétrico</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <!-- Google Fonts -->
+    <link
+        href="https://fonts.googleapis.com/css2?family=Comic+Neue:wght@400;700&family=Bangers&family=Chewy&family=Fredoka+One&family=Lobster&family=Patrick+Hand&family=Righteous&family=Russo+One&display=swap"
+        rel="stylesheet">
+    <!-- Three.js for 3D Viewer -->
+    <script src="https://cdn.jsdelivr.net/npm/three@0.137.0/build/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.137.0/examples/js/loaders/STLLoader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.137.0/examples/js/controls/OrbitControls.js"></script>
+</head>
+
+<body>
+    <div class="app-container">
+        <!-- Sidebar Controls -->
+        <aside class="sidebar">
+            <div class="header">
+                <h2>Gerador de nome paramétrico</h2>
+                <div class="model-info">
+                    <h3>Topper de nome personalizável</h3>
+                    <p>by Vinicius Vasconcelos</p>
+                </div>
+            </div>
+
+            <div class="sidebar-content" style="overflow-y: auto; padding-right: 5px;">
+                <!-- Added wrapper for scroll -->
+
+                <div class="control-group">
+                    <label>Linha 1</label>
+                    <input type="text" id="text_line_1" value="Vinicius" class="input-text">
+
+                    <div style="margin-top: 10px;">
+                        <label style="font-size: 0.9em; color: #aaa;">Tamanho Linha 1 (mm)</label>
+                        <div class="range-input">
+                            <input type="number" id="text_size_1" value="12" step="1">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <label>Linha 2 (Opcional)</label>
+                    <input type="text" id="text_line_2" placeholder="Ex: Aniversário" class="input-text">
+
+                    <div style="margin-top: 10px;">
+                        <label style="font-size: 0.9em; color: #aaa;">Tamanho Linha 2 (mm)</label>
+                        <div class="range-input">
+                            <input type="number" id="text_size_2" value="10" step="1">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <label>Fonte</label>
+                    <select id="font_family">
+                        <option value="Comic Neue" style="font-family: 'Comic Neue', cursive;">Comic Neue (Padrão)
+                        </option>
+                        <option value="Fredoka One" style="font-family: 'Fredoka One', cursive;">Fredoka One
+                            (Redondinha)</option>
+                        <option value="Chewy" style="font-family: 'Chewy', cursive;">Chewy (Divertida)</option>
+                        <option value="Bangers" style="font-family: 'Bangers', cursive;">Bangers (Quadrinhos)</option>
+                        <option value="Lobster" style="font-family: 'Lobster', cursive;">Lobster (Cursiva)</option>
+                        <option value="Patrick Hand" style="font-family: 'Patrick Hand', cursive;">Patrick Hand (Mão)
+                        </option>
+                        <option value="Righteous" style="font-family: 'Righteous', cursive;">Righteous (Moderna)
+                        </option>
+                        <option value="Russo One" style="font-family: 'Russo One', sans-serif;">Russo One (Forte)
+                        </option>
+
+                        <option disabled>─── Clássicas ───</option>
+                        <option value="Arial" style="font-family: Arial, sans-serif;">Arial</option>
+                        <option value="Verdana" style="font-family: Verdana, sans-serif;">Verdana</option>
+                        <option value="Times New Roman" style="font-family: 'Times New Roman', serif;">Times New Roman
+                        </option>
+                        <option value="Courier New" style="font-family: 'Courier New', monospace;">Courier New</option>
+                    </select>
+                    <div style="margin-top: 5px; display: flex; gap: 10px;">
+                        <label style="display: flex; align-items: center; cursor: pointer;">
+                            <input type="checkbox" id="font_bold" checked style="width: auto; margin-right: 5px;">
+                            Negrito
+                        </label>
+                        <label style="display: flex; align-items: center; cursor: pointer;">
+                            <input type="checkbox" id="font_italic" style="width: auto; margin-right: 5px;"> Itálico
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Text Size Removed - Moved to individual lines -->
+
+                <div class="control-group">
+                    <label>Altura da letra (mm)</label>
+                    <div class="range-input">
+                        <input type="number" id="letter_height" value="1.4" step="0.1">
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <label>Altura da base (mm)</label>
+                    <div class="range-input">
+                        <input type="number" id="base_height" value="12" step="1">
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <label>Espaçamento entre letras</label>
+                    <div class="range-input">
+                        <input type="range" id="spacing" min="0.5" max="2.0" step="0.1" value="1.0">
+                        <span id="spacing-val">1.0</span>
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <label>Espaçamento entre linhas</label>
+                    <div class="range-input">
+                        <input type="range" id="line_spacing" min="0.5" max="2.0" step="0.1" value="0.8">
+                        <span id="line_spacing-val">0.8</span>
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <label>Offset (margem ao redor do texto) (mm)</label>
+                    <div class="range-input">
+                        <input type="number" id="outline_margin" value="2.3" step="0.1">
+                    </div>
+                </div>
+
+                <details class="control-group" open>
+                    <summary>Furo</summary>
+                    <div class="sub-controls">
+                        <label>Orientação</label>
+                        <select id="hole_orientation" style="margin-bottom: 5px;">
+                            <option value="FRONTBACK" selected>Através do texto</option>
+                            <option value="TOPBOTTOM">Através da base</option>
+                        </select>
+
+                        <label>Formato</label>
+                        <select id="hole_type">
+                            <option value="CIRCLE" selected>Circular</option>
+                            <option value="HEXAGON">Hexagonal</option>
+                        </select>
+                        <label style="margin-top:10px;">Diâmetro (mm)</label>
+                        <input type="number" id="hole_diameter" value="7.8" step="0.1">
+                    </div>
+                </details>
+
+                <details class="control-group" open>
+                    <summary>Cores</summary>
+                    <div class="sub-controls color-row">
+                        <div class="color-group">
+                            <label>Base</label>
+                            <input type="color" id="base_color" value="#1B40D1">
+                        </div>
+                        <div class="color-group">
+                            <label>Texto</label>
+                            <input type="color" id="letters_color" value="#FFFFFF">
+                        </div>
+                    </div>
+                </details>
+
+                <div class="control-group">
+                    <button id="generateBtn" class="primary-btn">Visualizar Modelo</button>
+                    <div id="dimensions-info" style="margin-top: 10px; font-size: 0.9em; color: #aaa; display:none;">
+                        Dimensões estimadas: <span id="dims-val">--</span>
+                    </div>
+                    <a id="downloadBtn" class="secondary-btn" style="display:none" download>Download STL</a>
+                </div>
+            </div> <!-- End sidebar content -->
+        </aside>
+
+        <!-- 3D Viewer Area -->
+        <main class="viewer-area">
+            <!-- 2D Live Preview Overlay -->
+            <div id="preview-2d-container">
+                <div class="preview-label">Preview 2D (Tempo real)</div>
+                <div id="preview-text">Vinicius</div>
+            </div>
+
+            <div id="viewer"></div>
+            <div class="loading-overlay" id="loading" style="display: none;">
+                <div class="spinner"></div>
+                <p>Gerando modelo com OpenSCAD...</p>
+            </div>
+        </main>
+    </div>
+
+    <script src="/static/js/main.js"></script>
+</body>
+
+</html>

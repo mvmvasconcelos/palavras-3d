@@ -1,0 +1,13 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Generated content
+web/static/generated/
+*.stl
+*.scad
+!name_topper.scad
+
+# IDE
+.vscode/
