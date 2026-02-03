@@ -6,7 +6,7 @@ Este é um projeto para gerar "enfeites com nome" no formato STL para impressão
 2. **OpenSCAD** instalado (Necessário para gerar o modelo 3D).
    - O projeto espera que esteja em: `C:\Program Files\OpenSCAD\openscad.exe`
 3. **Fontes**: Instale as seguintes fontes no seu sistema para que o 3D funcione corretamente:
-   - Comic Neue, Fredoka One, Chewy, Bangers, Lobster, Patrick Hand, Righteous, Russo One.
+   - [Comic Neue](https://fonts.google.com/specimen/Comic+Neue), [Fredoka One](https://fonts.google.com/specimen/Fredoka+One), [Chewy](https://fonts.google.com/specimen/Chewy), [Bangers](https://fonts.google.com/specimen/Bangers), [Lobster](https://fonts.google.com/specimen/Lobster), [Patrick Hand](https://fonts.google.com/specimen/Patrick+Hand), [Righteous](https://fonts.google.com/specimen/Righteous), [Russo One](https://fonts.google.com/specimen/Russo+One).
 
 # Instalação e Execução
 
