@@ -58,28 +58,19 @@
 
                 <div class="control-group">
                     <label>Fonte</label>
-                    <select id="font_family">
-                        <option value="Comic Neue" style="font-family: 'Comic Neue', cursive;">Comic Neue (Padrão)
-                        </option>
-                        <option value="Fredoka One" style="font-family: 'Fredoka One', cursive;">Fredoka One
-                            (Redondinha)</option>
-                        <option value="Chewy" style="font-family: 'Chewy', cursive;">Chewy (Divertida)</option>
-                        <option value="Bangers" style="font-family: 'Bangers', cursive;">Bangers (Quadrinhos)</option>
-                        <option value="Lobster" style="font-family: 'Lobster', cursive;">Lobster (Cursiva)</option>
-                        <option value="Patrick Hand" style="font-family: 'Patrick Hand', cursive;">Patrick Hand (Mão)
-                        </option>
-                        <option value="Righteous" style="font-family: 'Righteous', cursive;">Righteous (Moderna)
-                        </option>
-                        <option value="Russo One" style="font-family: 'Russo One', sans-serif;">Russo One (Forte)
-                        </option>
+                    <label>Fonte</label>
+                    <div style="display: flex; gap: 5px; margin-bottom: 5px;">
+                        <select id="font_family" style="flex-grow: 1;">
+                            <!-- Options will be populated by JS -->
+                            <option value="Comic Neue:style=Bold">Carregando fontes...</option>
+                        </select>
+                        <button id="btn_upload_font" class="secondary-btn" style="width: auto; padding: 0 10px;"
+                            title="Enviar nova fonte (.ttf)">
+                            📂
+                        </button>
+                        <input type="file" id="font_file_input" accept=".ttf,.otf" style="display: none;">
+                    </div>
 
-                        <option disabled>─── Clássicas ───</option>
-                        <option value="Arial" style="font-family: Arial, sans-serif;">Arial</option>
-                        <option value="Verdana" style="font-family: Verdana, sans-serif;">Verdana</option>
-                        <option value="Times New Roman" style="font-family: 'Times New Roman', serif;">Times New Roman
-                        </option>
-                        <option value="Courier New" style="font-family: 'Courier New', monospace;">Courier New</option>
-                    </select>
                     <div style="margin-top: 5px; display: flex; gap: 10px;">
                         <label style="display: flex; align-items: center; cursor: pointer;">
                             <input type="checkbox" id="font_bold" checked style="width: auto; margin-right: 5px;">

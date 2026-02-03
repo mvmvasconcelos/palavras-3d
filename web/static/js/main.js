@@ -474,7 +474,16 @@ function update2DPreview() {
         div.textContent = text || '\u00A0'; // Non-breaking space if empty to hold height
 
         // Font Styles
-        div.style.fontFamily = `"${family}", "Comic Neue", cursive`;
+        // Font Styles
+        const fontSelect = document.getElementById('font_family');
+        let selectedFontFamily = `"${family}", "Comic Neue", cursive`; // Fallback
+
+        if (fontSelect.selectedOptions.length > 0) {
+            const styleFont = fontSelect.selectedOptions[0].style.fontFamily;
+            if (styleFont) selectedFontFamily = styleFont;
+        }
+
+        div.style.fontFamily = selectedFontFamily;
         div.style.fontWeight = isBold ? 'bold' : 'normal';
         div.style.fontStyle = isItalic ? 'italic' : 'normal';
         div.style.whiteSpace = "pre"; // Preserve multiple spaces
@@ -608,6 +617,134 @@ allInputs.forEach(input => {
 });
 
 // Restore on load
-restoreState();
+// restoreState(); // Moved to inside loadFonts().then()
+
+// ------------------------------------------------------------------
+// FONT MANAGEMENT
+// ------------------------------------------------------------------
+
+const fontSelect = document.getElementById('font_family');
+const uploadBtn = document.getElementById('btn_upload_font');
+const fileInput = document.getElementById('font_file_input');
+
+// Default fonts (Google Fonts loaded in index.html)
+const defaultFonts = [
+    { name: "Comic Neue", family: "'Comic Neue', cursive" },
+    { name: "Fredoka One", family: "'Fredoka One', cursive" },
+    { name: "Chewy", family: "'Chewy', cursive" },
+    { name: "Bangers", family: "'Bangers', cursive" },
+    { name: "Lobster", family: "'Lobster', cursive" },
+    { name: "Patrick Hand", family: "'Patrick Hand', cursive" },
+    { name: "Righteous", family: "'Righteous', cursive" },
+    { name: "Russo One", family: "'Russo One', sans-serif" },
+    { name: "Arial", family: "Arial, sans-serif" },
+    { name: "Verdana", family: "Verdana, sans-serif" },
+    { name: "Times New Roman", family: "'Times New Roman', serif" },
+    { name: "Courier New", family: "'Courier New', monospace" }
+];
+
+async function loadFonts() {
+    // 1. Fetch custom fonts from server
+    let customFonts = [];
+    try {
+        const res = await fetch('/api/fonts');
+        if (res.ok) customFonts = await res.json();
+    } catch (e) {
+        console.error("Failed to load fonts", e);
+    }
+
+    // 2. Clear select
+    fontSelect.innerHTML = '';
+
+    // 3. Helper to create option
+    const addOption = (label, value, fontFamily, isCustom = false, filename = null) => {
+        const opt = document.createElement('option');
+        opt.textContent = label;
+        opt.value = value;
+        opt.style.fontFamily = fontFamily;
+        if (isCustom) {
+            opt.dataset.custom = "true";
+            opt.dataset.filename = filename;
+            opt.textContent = `📂 ${label}`;
+        }
+        fontSelect.appendChild(opt);
+    };
+
+    // 4. Add Default Fonts
+    defaultFonts.forEach(f => addOption(f.name, f.name, f.family));
+
+    // 5. Add Custom Fonts & Inject CSS
+    // We create a <style> block for custom fonts
+    let styleBlock = document.getElementById('custom-fonts-css');
+    if (!styleBlock) {
+        styleBlock = document.createElement('style');
+        styleBlock.id = 'custom-fonts-css';
+        document.head.appendChild(styleBlock);
+    }
+
+    let cssRules = "";
+    customFonts.forEach(f => {
+        // Create unique font-family name for CSS to avoid conflicts
+        const cssFontFamily = `CustomFont_${f.filename.replace(/\W/g, '')}`;
+
+        cssRules += `
+            @font-face {
+                font-family: '${cssFontFamily}';
+                src: url('${f.url}') format('truetype');
+            }
+        `;
+
+        addOption(f.name, f.name, `'${cssFontFamily}', sans-serif`, true, f.filename);
+    });
+    styleBlock.textContent = cssRules;
+}
+
+// Upload Logic
+if (uploadBtn) {
+    uploadBtn.addEventListener('click', () => fileInput.click());
+    fileInput.addEventListener('change', async () => {
+        if (fileInput.files.length === 0) return;
+
+        const file = fileInput.files[0];
+        const formData = new FormData();
+        formData.append('font_file', file);
+
+        const oldText = uploadBtn.textContent;
+        uploadBtn.textContent = "⏳";
+
+        try {
+            const res = await fetch('/api/upload-font', {
+                method: 'POST',
+                body: formData
+            });
+            const data = await res.json();
+
+            if (data.success) {
+                await loadFonts();
+                // Auto-select the new font logic...
+                // Find and select
+                for (let i = 0; i < fontSelect.options.length; i++) {
+                    if (fontSelect.options[i].dataset.filename === data.filename) {
+                        fontSelect.selectedIndex = i;
+                        break;
+                    }
+                }
+                update2DPreview();
+            } else {
+                alert("Erro ao subir fonte: " + data.error);
+            }
+        } catch (e) {
+            alert("Erro no upload: " + e);
+        } finally {
+            uploadBtn.textContent = oldText;
+            fileInput.value = "";
+        }
+    });
+}
+
+// Initial Load
+loadFonts().then(() => {
+    restoreState();
+});
 
 
