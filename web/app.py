@@ -67,8 +67,6 @@ def generate():
     scad_lines_str = "[" + ", ".join([scad_str(line) for line in text_lines]) + "]"
     scad_sizes_str = str(text_sizes) 
 
-    # ...
-
     temp_scad_content = f"""
 include <{scad_file_escaped}>;
 

@@ -542,4 +542,72 @@ document.getElementById('generateBtn').addEventListener('click', () => {
 });
 
 // Initialize 3D Viewer on load
+// Initialize 3D Viewer on load
 initViewer();
+
+// ------------------------------------------------------------------
+// AUTO-SAVE FUNCTIONALITY (LocalStorage)
+// ------------------------------------------------------------------
+
+function saveState() {
+    const state = {};
+    const allowList = [
+        'text_line_1', 'text_line_2',
+        'text_size_1', 'text_size_2',
+        'font_family', 'font_bold', 'font_italic',
+        'base_height', 'letter_height',
+        'spacing', 'line_spacing', 'outline_margin',
+        'hole_orientation', 'hole_type', 'hole_diameter',
+        'base_color', 'letters_color'
+    ];
+
+    allowList.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) {
+            if (el.type === 'checkbox') {
+                state[id] = el.checked;
+            } else {
+                state[id] = el.value;
+            }
+        }
+    });
+
+    localStorage.setItem('palavras3d_state', JSON.stringify(state));
+    // Optional: console.log('State saved');
+}
+
+function restoreState() {
+    const saved = localStorage.getItem('palavras3d_state');
+    if (!saved) return;
+
+    try {
+        const state = JSON.parse(saved);
+        Object.keys(state).forEach(id => {
+            const el = document.getElementById(id);
+            if (el) {
+                if (el.type === 'checkbox') {
+                    el.checked = state[id];
+                } else {
+                    el.value = state[id];
+                }
+            }
+        });
+        console.log("Settings restored from Auto-Save.");
+
+        // Trigger updates after restore
+        update2DPreview();
+    } catch (e) {
+        console.error("Error restoring state:", e);
+    }
+}
+
+// Hook into existing inputs for saving
+allInputs.forEach(input => {
+    input.addEventListener('input', saveState);
+    input.addEventListener('change', saveState);
+});
+
+// Restore on load
+restoreState();
+
+
