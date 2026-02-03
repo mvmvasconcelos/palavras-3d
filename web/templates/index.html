@@ -161,6 +161,7 @@
                             <input type="color" id="letters_color" value="#FFFFFF">
                         </div>
                     </div>
+
                 </details>
 
                 <div class="control-group">
@@ -169,6 +170,17 @@
                         Dimensões estimadas: <span id="dims-val">--</span>
                     </div>
                     <a id="downloadBtn" class="secondary-btn" style="display:none" download>Download STL</a>
+                    <a id="downloadZipBtn" class="secondary-btn"
+                        style="display:none; background-color: #e67e22; color: #ffffff !important; margin-top: 5px; text-decoration: none;"
+                        download>Download ZIP (Multi-color)</a>
+
+                    <div id="download-help"
+                        style="display:none; margin-top: 15px; font-size: 0.75em; color: #ccc; line-height: 1.4; border-top: 1px solid #444; padding-top: 10px;">
+                        <strong>Qual baixar?</strong><br>
+                        • <strong>STL</strong>: Arquivo único. Ideal para cor única ou pintura manual no fatiador.<br>
+                        • <strong>ZIP</strong>: Contém "Base" e "Texto" separados. Ideal para impressão multicolorida
+                        (ex: Bambu Lab AMS) importando como objeto único.
+                    </div>
                 </div>
             </div> <!-- End sidebar content -->
         </aside>

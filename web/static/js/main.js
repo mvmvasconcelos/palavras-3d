@@ -218,8 +218,21 @@ function triggerGeneration() {
                 updateModelDimensions();
 
                 loading.style.display = 'none';
+
                 downloadBtn.href = data.full_url;
                 downloadBtn.style.display = 'block';
+
+                const downloadZipBtn = document.getElementById('downloadZipBtn');
+                if (data.zip_url) {
+                    downloadZipBtn.href = data.zip_url;
+                    downloadZipBtn.style.display = 'block';
+                } else {
+                    downloadZipBtn.style.display = 'none';
+                }
+
+                // Show help text
+                const helpText = document.getElementById('download-help');
+                if (helpText) helpText.style.display = 'block';
             });
         })
         .catch(err => {

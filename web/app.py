@@ -1,6 +1,7 @@
 import os
 import subprocess
 import time
+import zipfile
 from flask import Flask, render_template, request, send_from_directory, jsonify
 
 app = Flask(__name__)
@@ -140,11 +141,20 @@ rtl              = {'true' if rtl else 'false'};
         if os.path.exists(temp_scad_path):
             os.remove(temp_scad_path)
 
+        # Create ZIP file for multi-color
+        zip_filename = f"topper_multicolor_{timestamp}.zip"
+        zip_path = os.path.join(OUTPUT_DIR, zip_filename)
+        
+        with zipfile.ZipFile(zip_path, 'w') as zipf:
+            zipf.write(base_path, arcname="base.stl")
+            zipf.write(text_path, arcname="text.stl")
+
         return jsonify({
             "success": True, 
             "base_url": f"/static/generated/{base_filename}",
             "text_url": f"/static/generated/{text_filename}",
-            "full_url": f"/static/generated/{full_filename}"
+            "full_url": f"/static/generated/{full_filename}",
+            "zip_url": f"/static/generated/{zip_filename}"
         })
     except subprocess.TimeoutExpired:
         print("ERROR: OpenSCAD timed out!")
