@@ -12,7 +12,7 @@ export function initViewer(container) {
     // Camera
     const aspect = container.clientWidth / container.clientHeight;
     camera = new THREE.PerspectiveCamera(50, aspect, 0.1, 1000);
-    camera.position.set(100, -150, 150);
+    camera.position.set(60, -90, 107);
     camera.up.set(0, 0, 1); // Z-up for CAD
 
     // Renderer
@@ -24,7 +24,7 @@ export function initViewer(container) {
     // Controls
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
-    controls.target.set(30, 0, 0); // Focus slightly offset from origin
+    controls.target.set(40, 0, 0); // Focus on the center of the text area
 
     // Lights
     const ambi = new THREE.AmbientLight(0xffffff, 0.7);
