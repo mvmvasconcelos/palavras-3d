@@ -1,3 +1,6 @@
+import { initViewer, updateMesh, downloadSTL } from './viewer.js';
+import { initManifold, generateTextModel } from './engine.js';
+
 // DOM Elements
 const els = {
     line1: document.getElementById('textLine1'),
