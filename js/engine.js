@@ -51,8 +51,7 @@ export async function generateTextModel(params) {
     let combinedBounds = { min: [0, 0], max: [0, 0] };
 
     if (params.mode === 'wave') {
-        const amp = Number(params.waveAmplitude) || 0;
-        const freq = Number(params.waveFrequency) || 1.0;
+        const randIntensity = Number(params.randomHeight) || 0;
         const slant = Number(params.slantRange) || 0;
 
         let charModels = [];
@@ -71,6 +70,10 @@ export async function generateTextModel(params) {
                 continue;
             }
 
+            // Pseudo-random factor based on index (0 to 1)
+            const randFactor = (Math.abs(Math.sin(i * 12.9898 + 78.233) * 43758.5453) % 1);
+            const charHeight = height + (randFactor * randIntensity);
+
             let charCS = CrossSection.ofPolygons(charPolys.map(forceCCW), 1);
             if (thickness !== 0) {
                 const offset = charCS.offset(thickness, 1, 2.0);
@@ -78,28 +81,22 @@ export async function generateTextModel(params) {
                 charCS = offset;
             }
 
-            // Transformation calculation
-            const zShift = amp * Math.sin(i * freq);
-            // 'Alturas Diferentes' - we vary the extrusion height slightly around the base height
-            const charHeight = height + (amp * 0.4) * Math.cos(i * freq);
-
             let charM = charCS.extrude(charHeight);
 
             // Rotation around Z (tilting letters sideways)
             if (slant !== 0) {
-                const rotation = (slant * Math.PI / 180) * Math.cos(i * freq);
+                const rotation = (slant * Math.PI / 180) * Math.cos(i * 1.5);
                 charM = charM.rotate([0, 0, rotation * (180 / Math.PI)]);
             }
 
-            // Apply translation (Horizontal position + Z Wave shift)
-            // We shift in Z to create the wavy depth
-            charM = charM.translate([curX, 0, zShift]);
+            // Apply translation (Horizontal position, grounded at Z=0)
+            charM = charM.translate([curX, 0, 0]);
 
-            // Track 2D bounds for hole alignment (X and Y remain standard)
+            // Track 2D bounds for hole alignment 
             const charBounds = charCS.bounds();
             globalMin[0] = Math.min(globalMin[0], curX + getVal(charBounds.min, 0));
             globalMax[0] = Math.max(globalMax[0], curX + getVal(charBounds.max, 0));
-            globalMin[1] = Math.min(globalMin[1], getVal(charBounds.min, 1)); // No Y shift anymore
+            globalMin[1] = Math.min(globalMin[1], getVal(charBounds.min, 1));
             globalMax[1] = Math.max(globalMax[1], getVal(charBounds.max, 1));
 
             charCS.delete();

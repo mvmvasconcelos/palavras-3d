@@ -22,10 +22,8 @@ const els = {
     textHeight: document.getElementById('textHeight'),
     baseOffset: document.getElementById('baseOffset'),
     baseOffsetValue: document.getElementById('baseOffsetValue'),
-    waveAmplitude: document.getElementById('waveAmplitude'),
-    waveAmplitudeValue: document.getElementById('waveAmplitudeValue'),
-    waveFrequency: document.getElementById('waveFrequency'),
-    waveFrequencyValue: document.getElementById('waveFrequencyValue'),
+    randomHeight: document.getElementById('randomHeight'),
+    randomHeightValue: document.getElementById('randomHeightValue'),
     slantRange: document.getElementById('slantRange'),
     slantValue: document.getElementById('slantValue'),
     textColor: document.getElementById('textColor'),
@@ -107,7 +105,7 @@ async function app() {
 
         // Inputs triggering generate
         [els.line1, els.size, els.height, els.textHeight, els.baseOffset, els.holeDiameter, els.holeOrientation, els.letterSpacing, els.fontThickness, els.textColor, els.baseColor,
-        els.waveAmplitude, els.waveFrequency, els.slantRange]
+        els.randomHeight, els.slantRange]
             .forEach(el => el.addEventListener('input', () => {
                 if (el === els.fontThickness) {
                     els.thicknessValue.innerText = parseFloat(el.value).toFixed(1) + "mm";
@@ -115,11 +113,8 @@ async function app() {
                 if (el === els.baseOffset) {
                     els.baseOffsetValue.innerText = parseFloat(el.value).toFixed(1) + "mm";
                 }
-                if (el === els.waveAmplitude) {
-                    els.waveAmplitudeValue.innerText = parseFloat(el.value).toFixed(1) + "mm";
-                }
-                if (el === els.waveFrequency) {
-                    els.waveFrequencyValue.innerText = parseFloat(el.value).toFixed(1);
+                if (el === els.randomHeight) {
+                    els.randomHeightValue.innerText = parseFloat(el.value).toFixed(1) + "mm";
                 }
                 if (el === els.slantRange) {
                     els.slantValue.innerText = el.value + "°";
@@ -173,8 +168,7 @@ async function generate(showOverlay = false) {
                 baseOffset: parseFloat(els.baseOffset.value) || 3.0,
                 textProtrusion: parseFloat(els.textHeight.value) || 3.0,
                 // Modo 2
-                waveAmplitude: parseFloat(els.waveAmplitude.value) || 0,
-                waveFrequency: parseFloat(els.waveFrequency.value) || 1,
+                randomHeight: parseFloat(els.randomHeight.value) || 0,
                 slantRange: parseFloat(els.slantRange.value) || 0
             };
 
