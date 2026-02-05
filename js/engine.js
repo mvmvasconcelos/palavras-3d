@@ -48,6 +48,7 @@ export async function generateTextModel(params) {
     // --- MODE SELECTION & CONSTRUCTION ---
     let textModel = null;
     let baseModel = null;
+    let combinedBounds = { min: [0, 0], max: [0, 0] };
 
     if (params.mode === 'wave') {
         const amp = Number(params.waveAmplitude) || 0;
@@ -56,13 +57,14 @@ export async function generateTextModel(params) {
 
         let charModels = [];
         let curX = 0;
+        let globalMin = [Infinity, Infinity];
+        let globalMax = [-Infinity, -Infinity];
 
         for (let i = 0; i < text.length; i++) {
             const char = text[i];
             const glyph = font.charToGlyph(char);
             const glyphPath = glyph.getPath(0, 0, size);
 
-            // Collect polygons for THIS character at local origin
             const charPolys = pathToPolygons(glyphPath, 0);
             if (charPolys.length === 0) {
                 curX += font.getAdvanceWidth(char, size) + spacing;
@@ -77,27 +79,37 @@ export async function generateTextModel(params) {
             }
 
             // Transformation calculation
-            const hShift = amp * Math.sin(i * freq);
-            const rotation = (slant * Math.PI / 180) * Math.cos(i * freq);
+            const zShift = amp * Math.sin(i * freq);
+            // 'Alturas Diferentes' - we vary the extrusion height slightly around the base height
+            const charHeight = height + (amp * 0.4) * Math.cos(i * freq);
 
-            let charM = charCS.extrude(height);
-            charCS.delete();
+            let charM = charCS.extrude(charHeight);
 
-            // Apply rotation around Z (tilting)
+            // Rotation around Z (tilting letters sideways)
             if (slant !== 0) {
+                const rotation = (slant * Math.PI / 180) * Math.cos(i * freq);
                 charM = charM.rotate([0, 0, rotation * (180 / Math.PI)]);
             }
 
-            // Apply translation (Horizontal position + Wave height)
-            charM = charM.translate([curX, hShift, 0]);
+            // Apply translation (Horizontal position + Z Wave shift)
+            // We shift in Z to create the wavy depth
+            charM = charM.translate([curX, 0, zShift]);
 
+            // Track 2D bounds for hole alignment (X and Y remain standard)
+            const charBounds = charCS.bounds();
+            globalMin[0] = Math.min(globalMin[0], curX + getVal(charBounds.min, 0));
+            globalMax[0] = Math.max(globalMax[0], curX + getVal(charBounds.max, 0));
+            globalMin[1] = Math.min(globalMin[1], getVal(charBounds.min, 1)); // No Y shift anymore
+            globalMax[1] = Math.max(globalMax[1], getVal(charBounds.max, 1));
+
+            charCS.delete();
             charModels.push(charM);
             curX += font.getAdvanceWidth(char, size) + spacing;
         }
 
         if (charModels.length === 0) return null;
+        combinedBounds = { min: globalMin, max: globalMax };
 
-        // Stable Union Loop
         textModel = charModels[0];
         for (let i = 1; i < charModels.length; i++) {
             const next = textModel.add(charModels[i]);
@@ -106,7 +118,6 @@ export async function generateTextModel(params) {
             textModel = next;
         }
     } else {
-        // --- SIMPLE / MODO 1: SINGLE PASS ASSEMBLY ---
         let allPolys = [];
         let curX = 0;
         for (let i = 0; i < text.length; i++) {
@@ -128,25 +139,22 @@ export async function generateTextModel(params) {
             const textProtrusion = parseFloat(params.textProtrusion) || 3.0;
 
             const baseCS = cs.offset(baseOffset, 1, 2.0);
+            const b = baseCS.bounds();
+            combinedBounds = { min: [getVal(b.min, 0), getVal(b.min, 1)], max: [getVal(b.max, 0), getVal(b.max, 1)] };
+
             baseModel = baseCS.extrude(height);
             baseCS.delete();
-
             textModel = cs.extrude(height + textProtrusion);
         } else {
+            const b = cs.bounds();
+            combinedBounds = { min: [getVal(b.min, 0), getVal(b.min, 1)], max: [getVal(b.max, 0), getVal(b.max, 1)] };
             textModel = cs.extrude(height);
         }
         cs.delete();
     }
 
     // --- HOLE SYSTEM ---
-    const bounds = textModel.getBounds();
-    const centerX = (bounds.min[0] + bounds.max[0]) / 2;
-    const centerY = (bounds.min[1] + bounds.max[1]) / 2;
-
-    const holeModel = createHole(params, {
-        min: [bounds.min[0], bounds.min[1]],
-        max: [bounds.max[0], bounds.max[1]]
-    }, height);
+    const holeModel = createHole(params, combinedBounds, height);
 
     // --- FINAL SUBTRACTION & RESULT ---
     let textMesh = null;
