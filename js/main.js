@@ -16,6 +16,13 @@ const els = {
     btnGen: document.getElementById('btnGenerate'),
     btnDown: document.getElementById('btnDownload'),
     status: document.getElementById('status'),
+    buildModeGroup: document.getElementById('buildModeGroup'),
+    modo1Controls: document.getElementById('modo1Controls'),
+    textHeight: document.getElementById('textHeight'),
+    baseOffset: document.getElementById('baseOffset'),
+    baseOffsetValue: document.getElementById('baseOffsetValue'),
+    textColor: document.getElementById('textColor'),
+    baseColor: document.getElementById('baseColor'),
     loading: document.getElementById('loadingOverlay'),
     loadingText: document.getElementById('loadingText')
 };
@@ -57,19 +64,22 @@ async function app() {
         await loadFont(els.fontSelect.value);
         setLoading("Pronto", false);
 
-        // 3. Hole Type Group Initialization
-        let currentHoleType = 'circle';
-        const typeButtons = els.holeTypeGroup.querySelectorAll('.type-btn');
-        typeButtons.forEach(btn => {
+        // 3. Build Mode Initialization
+        let currentBuildMode = 'simple';
+        const modeButtons = els.buildModeGroup.querySelectorAll('.type-btn');
+        modeButtons.forEach(btn => {
             btn.addEventListener('click', () => {
-                typeButtons.forEach(b => b.classList.remove('active'));
+                modeButtons.forEach(b => b.classList.remove('active'));
                 btn.classList.add('active');
-                currentHoleType = btn.dataset.value;
+                currentBuildMode = btn.dataset.value;
+
+                // Toggle Modo 1 specific UI
+                els.modo1Controls.style.display = (currentBuildMode === 'contour') ? 'block' : 'none';
                 generate(false);
             });
         });
 
-        // 3. Bind Events
+        // 4. Bind Events
         els.btnGen.addEventListener('click', () => generate(true));
         els.btnDown.addEventListener('click', () => downloadSTL("enfeite-3d"));
 
@@ -77,10 +87,13 @@ async function app() {
         const debouncedGenerate = debounce(() => generate(false), 400);
 
         // Inputs triggering generate
-        [els.line1, els.size, els.height, els.holeDiameter, els.holeOrientation, els.letterSpacing, els.fontThickness]
+        [els.line1, els.size, els.height, els.textHeight, els.baseOffset, els.holeDiameter, els.holeOrientation, els.letterSpacing, els.fontThickness, els.textColor, els.baseColor]
             .forEach(el => el.addEventListener('input', () => {
                 if (el === els.fontThickness) {
                     els.thicknessValue.innerText = el.value + "mm";
+                }
+                if (el === els.baseOffset) {
+                    els.baseOffsetValue.innerText = el.value + "mm";
                 }
                 debouncedGenerate();
             }));
@@ -125,13 +138,17 @@ async function generate(showOverlay = false) {
                 holeOrientation: els.holeOrientation.value,
                 letterSpacing: parseFloat(els.letterSpacing.value) || 0,
                 fontThickness: parseFloat(els.fontThickness.value) || 0,
-                fontName: els.fontSelect.value
+                fontName: els.fontSelect.value,
+                // Modo 1
+                mode: els.buildModeGroup.querySelector('.active').dataset.value,
+                baseOffset: parseFloat(els.baseOffset.value) || 3.0,
+                textProtrusion: parseFloat(els.textHeight.value) || 3.0
             };
 
-            const mesh = await generateTextModel(params);
+            const meshData = await generateTextModel(params);
 
-            if (mesh) {
-                updateMesh(mesh);
+            if (meshData && (meshData.textMesh || meshData.baseMesh)) {
+                updateMesh(meshData, els.textColor.value, els.baseColor.value);
                 els.btnDown.disabled = false;
                 setLoading("Modelo Pronto!", false);
             } else {

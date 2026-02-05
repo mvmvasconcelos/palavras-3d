@@ -132,11 +132,36 @@ button {
     border-left: 3px solid var(--primary);
 }
 
-/* Button Group / Toggle buttons */
-.btn-group {
-    display: flex;
-    gap: 0.5rem;
-    padding: 0.2rem 0;
+.color-picker-wrapper {
+    display: inline-block;
+}
+
+.color-picker-wrapper input[type="color"] {
+    appearance: none;
+    -webkit-appearance: none;
+    border: 2px solid #fff;
+    width: 36px;
+    height: 36px;
+    cursor: pointer;
+    background: none;
+    padding: 0;
+    border-radius: 50%;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.color-picker-wrapper input[type="color"]:hover {
+    transform: scale(1.1);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+.color-picker-wrapper input[type="color"]::-webkit-color-swatch-wrapper {
+    padding: 0;
+}
+
+.color-picker-wrapper input[type="color"]::-webkit-color-swatch {
+    border: none;
+    border-radius: 50%;
 }
 
 .type-btn {
@@ -222,6 +247,26 @@ button {
     flex: 1;
     padding: 0;
     cursor: pointer;
+}
+
+.slider-cont.value-display {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--primary);
+    background: rgba(59, 130, 246, 0.1);
+    padding: 2px 6px;
+    border-radius: 4px;
+    min-width: 45px;
+    text-align: center;
+    margin-left: 0.5rem;
+}
+
+#modo1Controls {
+    margin-top: 1rem;
+    padding: 1rem;
+    background: rgba(255, 255, 255, 0.4);
+    border-radius: 8px;
+    border: 1px dashed #cbd5e1;
 }
 
 .slider-container span {

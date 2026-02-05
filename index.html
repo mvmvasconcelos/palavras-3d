@@ -33,7 +33,24 @@
             <h1>Palavras 3D</h1>
 
             <!-- Section: Text & Font -->
+            <div class="divider">Modo de Construção</div>
+            <div class="control-group">
+                <div class="btn-group" id="buildModeGroup">
+                    <button type="button" class="type-btn active" data-value="simple"
+                        title="Texto Simples">Simples</button>
+                    <button type="button" class="type-btn" data-value="contour"
+                        title="Base de Contorno (Modo 1)">Contorno</button>
+                </div>
+            </div>
+
             <div class="divider">Texto e Tipografia</div>
+            <div class="control-group">
+                <label for="textColor">Cor do Texto</label>
+                <div class="color-picker-wrapper">
+                    <input type="color" id="textColor" value="#2563eb" title="Escolher cor do texto">
+                </div>
+            </div>
+
             <div class="control-group">
                 <label>Texto do Modelo</label>
                 <input type="text" id="textLine1" value="Vinicius" placeholder="Digite seu texto...">
@@ -73,8 +90,29 @@
             </div>
 
             <div class="control-group">
-                <label for="height">Altura Total (Espessura mm)</label>
-                <input type="number" id="height" value="12" min="10" max="50">
+                <label for="height">Altura Total / Altura da Base (mm)</label>
+                <input type="number" id="height" value="12" min="10" max="50" step="1">
+            </div>
+
+            <!-- Modo 1 Specific Controls (Hidden by default or shown via JS) -->
+            <div id="modo1Controls" style="display: none;">
+                <div class="control-group">
+                    <label for="textHeight">Protrusão do Texto (mm)</label>
+                    <input type="number" id="textHeight" value="3" min="0.5" max="10" step="0.5">
+                    <div style="font-size: 0.75rem; color: #64748b; margin-top: 2px;">Altura das letras sobre a base
+                    </div>
+                </div>
+                <div class="control-group">
+                    <label for="baseOffset">Offset da Base (mm)</label>
+                    <input type="range" id="baseOffset" value="3.0" min="0.5" max="8" step="0.1">
+                    <span id="baseOffsetValue" class="value-display">3.0mm</span>
+                </div>
+                <div class="control-group">
+                    <label for="baseColor">Cor da Base</label>
+                    <div class="color-picker-wrapper">
+                        <input type="color" id="baseColor" value="#ffffff" title="Escolher cor da base">
+                    </div>
+                </div>
             </div>
 
             <!-- Pen Topper Settings -->

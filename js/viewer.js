@@ -92,40 +92,65 @@ function createTextSprite(text) {
     return sprite;
 }
 
-export function updateMesh(manifoldMesh) {
+export function updateMesh(meshData, textColor = 0x2563eb, baseColor = 0xffffff) {
     if (currentMesh) {
         scene.remove(currentMesh);
-        currentMesh.geometry.dispose();
+        // Traverse to dispose all geometries and materials in the group
+        currentMesh.traverse(child => {
+            if (child.geometry) child.geometry.dispose();
+            if (child.material) child.material.dispose();
+        });
     }
 
-    if (!manifoldMesh || manifoldMesh.triVerts.length === 0) return;
+    currentMesh = new THREE.Group();
 
-    const geometry = new THREE.BufferGeometry();
-    const numProp = manifoldMesh.numProp || 3;
+    const createMesh = (manifoldMesh, color) => {
+        if (!manifoldMesh || manifoldMesh.triVerts.length === 0) return null;
+        const geometry = new THREE.BufferGeometry();
+        const numProp = manifoldMesh.numProp || 3;
 
-    if (numProp > 3) {
-        const posData = new Float32Array(manifoldMesh.numVert * 3);
-        for (let i = 0; i < manifoldMesh.numVert; i++) {
-            posData[i * 3 + 0] = manifoldMesh.vertProperties[i * numProp + 0];
-            posData[i * 3 + 1] = manifoldMesh.vertProperties[i * numProp + 1];
-            posData[i * 3 + 2] = manifoldMesh.vertProperties[i * numProp + 2];
+        if (numProp > 3) {
+            const posData = new Float32Array(manifoldMesh.numVert * 3);
+            for (let i = 0; i < manifoldMesh.numVert; i++) {
+                posData[i * 3 + 0] = manifoldMesh.vertProperties[i * numProp + 0];
+                posData[i * 3 + 1] = manifoldMesh.vertProperties[i * numProp + 1];
+                posData[i * 3 + 2] = manifoldMesh.vertProperties[i * numProp + 2];
+            }
+            geometry.setAttribute('position', new THREE.BufferAttribute(posData, 3));
+        } else {
+            geometry.setAttribute('position', new THREE.BufferAttribute(manifoldMesh.vertProperties, 3));
         }
-        geometry.setAttribute('position', new THREE.BufferAttribute(posData, 3));
-    } else {
-        geometry.setAttribute('position', new THREE.BufferAttribute(manifoldMesh.vertProperties, 3));
+
+        geometry.setIndex(new THREE.BufferAttribute(manifoldMesh.triVerts, 1));
+        geometry.computeVertexNormals();
+
+        const material = new THREE.MeshPhongMaterial({
+            color: color,
+            specular: 0x111111,
+            shininess: 40,
+            side: THREE.DoubleSide
+        });
+
+        return new THREE.Mesh(geometry, material);
+    };
+
+    // Handle single mesh or object with textMesh/baseMesh
+    if (meshData.textMesh) {
+        const textObj = createMesh(meshData.textMesh, textColor);
+        if (textObj) currentMesh.add(textObj);
     }
 
-    geometry.setIndex(new THREE.BufferAttribute(manifoldMesh.triVerts, 1));
-    geometry.computeVertexNormals();
+    if (meshData.baseMesh) {
+        const baseObj = createMesh(meshData.baseMesh, baseColor);
+        if (baseObj) currentMesh.add(baseObj);
+    }
 
-    const material = new THREE.MeshPhongMaterial({
-        color: 0x3b82f6,
-        specular: 0x111111,
-        shininess: 40,
-        side: THREE.DoubleSide
-    });
+    // Fallback for direct mesh result (backward compatibility)
+    if (!meshData.textMesh && meshData.triVerts) {
+        const obj = createMesh(meshData, textColor);
+        if (obj) currentMesh.add(obj);
+    }
 
-    currentMesh = new THREE.Mesh(geometry, material);
     scene.add(currentMesh);
 }
 

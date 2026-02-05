@@ -105,8 +105,6 @@ export async function generateTextModel(params) {
         cs = cs.translate([-getVal(b.min, 0), -getVal(b.min, 1)]);
     }
 
-    const textModel = cs.extrude(height);
-
     // --- HOLE LOGIC ---
     const holeDia = Number(params.holeDiameter) || 7.5;
     const holeType = params.holeType || 'circle';
@@ -132,10 +130,22 @@ export async function generateTextModel(params) {
         holeCS = CrossSection.circle(holeRad, 32);
     }
 
-    const bFinal = cs.bounds();
-    const midX = (getVal(bFinal.min, 0) + getVal(bFinal.max, 0)) / 2;
-    const midY = (getVal(bFinal.min, 1) + getVal(bFinal.max, 1)) / 2;
-    const holeLength = Math.max(300, getVal(bFinal.max, 0) * 2);
+    // Determine bounds for hole positioning *before* any model creation
+    // For contour mode, we use the baseCS bounds for hole positioning
+    // For simple mode, we use the cs bounds
+    let boundsForHole;
+    if (params.mode === 'contour') {
+        const baseOffset = parseFloat(params.baseOffset) || 3.0;
+        const tempBaseCS = cs.offset(baseOffset, 1, 2.0);
+        boundsForHole = tempBaseCS.bounds();
+        tempBaseCS.delete(); // Clean up temporary CS
+    } else {
+        boundsForHole = cs.bounds();
+    }
+
+    const midX = (getVal(boundsForHole.min, 0) + getVal(boundsForHole.max, 0)) / 2;
+    const midY = (getVal(boundsForHole.min, 1) + getVal(boundsForHole.max, 1)) / 2;
+    const holeLength = Math.max(300, getVal(boundsForHole.max, 0) * 2);
 
     let holeModel = holeCS.extrude(holeLength).translate([0, 0, -holeLength / 2]);
 
@@ -147,18 +157,48 @@ export async function generateTextModel(params) {
         holeModel = holeModel.rotate([90, 0, 0]).translate([midX, midY, height / 2]);
     }
 
-    // --- SUBTRACTION ---
-    const finalModel = textModel.subtract(holeModel);
-    const mesh = finalModel.getMesh();
+    // --- SUBTRACTION & RESULT ---
+    let textMesh = null;
+    let baseMesh = null;
 
-    // Final Cleanup
+    if (params.mode === 'contour') {
+        const baseOffset = parseFloat(params.baseOffset) || 3.0;
+        const textProtrusion = parseFloat(params.textProtrusion) || 3.0;
+
+        const baseCS = cs.offset(baseOffset, 1, 2.0);
+        const baseModel = baseCS.extrude(height);
+        const textModel = cs.extrude(height + textProtrusion);
+
+        // Subtract hole from each part independently to keep them separate for coloring
+        const FinalBase = baseModel.subtract(holeModel);
+        const FinalText = textModel.subtract(holeModel);
+
+        baseMesh = FinalBase.getMesh();
+        textMesh = FinalText.getMesh();
+
+        // Cleanup
+        baseCS.delete();
+        baseModel.delete();
+        textModel.delete();
+        FinalBase.delete();
+        FinalText.delete();
+    } else {
+        // Simple Mode
+        const finalModel = cs.extrude(height);
+        const result = finalModel.subtract(holeModel);
+        textMesh = result.getMesh();
+
+        // Cleanup
+        finalModel.delete();
+        result.delete();
+    }
+
+    // Final Engine Cleanup
     cs.delete();
     holeCS.delete();
-    textModel.delete();
     holeModel.delete();
-    finalModel.delete();
 
-    return mesh;
+    return { textMesh, baseMesh };
 }
 
 function forceCCW(poly) {
