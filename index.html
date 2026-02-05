@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Palavras 3D - Generator</title>
+    <link rel="stylesheet" href="css/style.css">
+
+    <!-- Import Maps for clean module functionality without bundlers -->
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
+            "manifold-3d": "https://cdn.jsdelivr.net/npm/manifold-3d@2.5.1/manifold.js",
+            "opentype.js": "https://unpkg.com/opentype.js@1.3.4/dist/opentype.module.js"
+        }
+    }
+    </script>
+</head>
+
+<body>
+    <div id="app">
+        <!-- Sidebar Controls -->
+        <aside id="sidebar">
+            <h1>Palavras 3D</h1>
+
+            <div class="control-group">
+                <label>Texto (Linha 1)</label>
+                <input type="text" id="textLine1" value="Vinicius">
+            </div>
+
+            <div class="control-group">
+                <label>Tamanho Fonte</label>
+                <input type="number" id="fontSize" value="30">
+            </div>
+
+            <div class="control-group">
+                <label>Altura (Extrusão)</label>
+                <input type="number" id="height" value="5">
+            </div>
+
+            <button id="btnGenerate" class="primary-btn">Gerar Modelo 3D</button>
+            <button id="btnDownload" class="secondary-btn" disabled>Baixar STL</button>
+
+            <div id="status" class="status-msg">Pronto</div>
+        </aside>
+
+        <!-- 3D Viewer -->
+        <main id="viewer">
+            <div id="loadingOverlay">
+                <div class="spinner"></div>
+                <div id="loadingText">Carregando bibliotecas...</div>
+            </div>
+        </main>
+    </div>
+
+    <!-- App Entry Point -->
+    <script type="module" src="js/main.js?v=2.5"></script>
+</body>
+
+</html>
