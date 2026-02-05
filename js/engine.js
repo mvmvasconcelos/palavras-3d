@@ -52,6 +52,7 @@ export async function generateTextModel(params) {
 
     if (params.mode === 'wave') {
         const randIntensity = Number(params.randomHeight) || 0;
+        const seed = Number(params.randomSeed) || 0.5;
         const slant = Number(params.slantRange) || 0;
 
         let charModels = [];
@@ -70,8 +71,8 @@ export async function generateTextModel(params) {
                 continue;
             }
 
-            // Pseudo-random factor based on index (0 to 1)
-            const randFactor = (Math.abs(Math.sin(i * 12.9898 + 78.233) * 43758.5453) % 1);
+            // Pseudo-random factor based on index and seed
+            const randFactor = (Math.abs(Math.sin((i + seed * 100) * 12.9898 + 78.233) * 43758.5453) % 1);
             const charHeight = height + (randFactor * randIntensity);
 
             let charCS = CrossSection.ofPolygons(charPolys.map(forceCCW), 1);

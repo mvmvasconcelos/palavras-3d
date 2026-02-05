@@ -26,6 +26,7 @@ const els = {
     randomHeightValue: document.getElementById('randomHeightValue'),
     slantRange: document.getElementById('slantRange'),
     slantValue: document.getElementById('slantValue'),
+    btnShuffle: document.getElementById('btnShuffle'),
     textColor: document.getElementById('textColor'),
     baseColor: document.getElementById('baseColor'),
     loading: document.getElementById('loadingOverlay'),
@@ -71,6 +72,7 @@ async function app() {
 
         // 3. Build Mode Initialization
         let currentBuildMode = 'simple';
+        let randomSeed = Math.random();
         const modeButtons = els.buildModeGroup.querySelectorAll('.type-btn');
         modeButtons.forEach(btn => {
             btn.addEventListener('click', () => {
@@ -99,6 +101,11 @@ async function app() {
         // 5. Bind Events
         els.btnGen.addEventListener('click', () => generate(true));
         els.btnDown.addEventListener('click', () => downloadSTL("enfeite-3d"));
+
+        els.btnShuffle.addEventListener('click', () => {
+            randomSeed = Math.random();
+            generate(false);
+        });
 
         // Live Preview Bindings
         const debouncedGenerate = debounce(() => generate(false), 400);
@@ -169,6 +176,7 @@ async function generate(showOverlay = false) {
                 textProtrusion: parseFloat(els.textHeight.value) || 3.0,
                 // Modo 2
                 randomHeight: parseFloat(els.randomHeight.value) || 0,
+                randomSeed: randomSeed,
                 slantRange: parseFloat(els.slantRange.value) || 0
             };
 
