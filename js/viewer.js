@@ -2,18 +2,33 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { STLExporter } from 'three/addons/exporters/STLExporter.js';
 
-let scene, camera, renderer, currentMesh;
+let scene, camera, perspectiveCamera, orthographicCamera, renderer, controls, currentMesh;
+let activeCamera;
 
 export function initViewer(container) {
     // Scene
     scene = new THREE.Scene();
     scene.background = new THREE.Color(0xf1f5f9);
 
-    // Camera
     const aspect = container.clientWidth / container.clientHeight;
-    camera = new THREE.PerspectiveCamera(50, aspect, 0.1, 1000);
-    camera.position.set(60, -90, 107);
-    camera.up.set(0, 0, 1); // Z-up for CAD
+
+    // 1. Perspective Camera
+    perspectiveCamera = new THREE.PerspectiveCamera(50, aspect, 0.1, 1000);
+    perspectiveCamera.position.set(60, -90, 107);
+    perspectiveCamera.up.set(0, 0, 1);
+
+    // 2. Orthographic Camera
+    const frustumSize = 150;
+    orthographicCamera = new THREE.OrthographicCamera(
+        frustumSize * aspect / -2, frustumSize * aspect / 2,
+        frustumSize / 2, frustumSize / -2,
+        0.1, 1000
+    );
+    orthographicCamera.position.copy(perspectiveCamera.position);
+    orthographicCamera.up.set(0, 0, 1);
+
+    camera = perspectiveCamera;
+    activeCamera = 'perspective';
 
     // Renderer
     renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
@@ -22,9 +37,9 @@ export function initViewer(container) {
     container.appendChild(renderer.domElement);
 
     // Controls
-    const controls = new OrbitControls(camera, renderer.domElement);
+    controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
-    controls.target.set(40, 0, 0); // Focus on the center of the text area
+    controls.target.set(40, 0, 0);
 
     // Lights
     const ambi = new THREE.AmbientLight(0xffffff, 0.7);
@@ -33,16 +48,12 @@ export function initViewer(container) {
     dir.position.set(50, -100, 100);
     scene.add(dir);
 
-    // Grid Helper (10mm subdivisions)
+    // Grid & Helpers
     const grid = new THREE.GridHelper(300, 30, 0x94a3b8, 0xcbd5e1);
     grid.rotateX(Math.PI / 2);
     scene.add(grid);
-
-    // Axes Helper
     const axes = new THREE.AxesHelper(30);
     scene.add(axes);
-
-    // Visual Ruler Labels
     addRulerLabels(scene);
 
     // Loop
@@ -55,10 +66,46 @@ export function initViewer(container) {
 
     // Resize
     window.addEventListener('resize', () => {
-        camera.aspect = container.clientWidth / container.clientHeight;
-        camera.updateProjectionMatrix();
-        renderer.setSize(container.clientWidth, container.clientHeight);
+        const width = container.clientWidth;
+        const height = container.clientHeight;
+        const newAspect = width / height;
+
+        // Update Perspective
+        perspectiveCamera.aspect = newAspect;
+        perspectiveCamera.updateProjectionMatrix();
+
+        // Update Orthographic
+        const fSize = 150;
+        orthographicCamera.left = -fSize * newAspect / 2;
+        orthographicCamera.right = fSize * newAspect / 2;
+        orthographicCamera.top = fSize / 2;
+        orthographicCamera.bottom = -fSize / 2;
+        orthographicCamera.updateProjectionMatrix();
+
+        renderer.setSize(width, height);
     });
+}
+
+/**
+ * Switch camera mode
+ */
+export function setCameraMode(isOrthographic) {
+    const oldCam = camera;
+    if (isOrthographic) {
+        camera = orthographicCamera;
+        activeCamera = 'orthographic';
+    } else {
+        camera = perspectiveCamera;
+        activeCamera = 'perspective';
+    }
+
+    // Sync position and rotation
+    camera.position.copy(oldCam.position);
+    camera.quaternion.copy(oldCam.quaternion);
+
+    // Update OrbitControls
+    controls.object = camera;
+    controls.update();
 }
 
 function addRulerLabels(scene) {
