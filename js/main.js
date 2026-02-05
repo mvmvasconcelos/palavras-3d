@@ -26,7 +26,7 @@ const els = {
     randomHeightValue: document.getElementById('randomHeightValue'),
     slantRange: document.getElementById('slantRange'),
     slantValue: document.getElementById('slantValue'),
-    btnShuffle: document.getElementById('btnShuffle'),
+    slantValue: document.getElementById('slantValue'),
     textColor: document.getElementById('textColor'),
     baseColor: document.getElementById('baseColor'),
     loading: document.getElementById('loadingOverlay'),
@@ -103,11 +103,6 @@ async function app() {
         // 5. Bind Events
         els.btnGen.addEventListener('click', () => generate(true));
         els.btnDown.addEventListener('click', () => downloadSTL("enfeite-3d"));
-
-        els.btnShuffle.addEventListener('click', () => {
-            randomSeed = Math.random();
-            generate(false);
-        });
 
         // Live Preview Bindings
         const debouncedGenerate = debounce(() => generate(false), 400);

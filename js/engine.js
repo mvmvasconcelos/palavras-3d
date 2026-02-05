@@ -51,8 +51,7 @@ export async function generateTextModel(params) {
     let combinedBounds = { min: [0, 0], max: [0, 0] };
 
     if (params.mode === 'wave') {
-        const randIntensity = Number(params.randomHeight) || 0;
-        const seed = Number(params.randomSeed) || 0.5;
+        const altOffset = Number(params.randomHeight) || 0;
         const slant = Number(params.slantRange) || 0;
 
         let charModels = [];
@@ -71,9 +70,9 @@ export async function generateTextModel(params) {
                 continue;
             }
 
-            // Pseudo-random factor based on index and seed
-            const randFactor = (Math.abs(Math.sin((i + seed * 100) * 12.9898 + 78.233) * 43758.5453) % 1);
-            const charHeight = height + (randFactor * randIntensity);
+            // Alternating (Even / Odd) height logic
+            const isOdd = (i % 2 !== 0);
+            const charHeight = height + (isOdd ? altOffset : 0);
 
             let charCS = CrossSection.ofPolygons(charPolys.map(forceCCW), 1);
             if (thickness !== 0) {
@@ -86,7 +85,9 @@ export async function generateTextModel(params) {
 
             // Rotation around Z (tilting letters sideways)
             if (slant !== 0) {
-                const rotation = (slant * Math.PI / 180) * Math.cos(i * 1.5);
+                // Alternating slant direction for visual rhythm
+                const slantDir = (i % 2 === 0) ? 1 : -1;
+                const rotation = (slant * Math.PI / 180) * slantDir;
                 charM = charM.rotate([0, 0, rotation * (180 / Math.PI)]);
             }
 
