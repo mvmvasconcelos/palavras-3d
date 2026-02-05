@@ -7,41 +7,43 @@ let scene, camera, renderer, currentMesh;
 export function initViewer(container) {
     // Scene
     scene = new THREE.Scene();
-    scene.background = new THREE.Color(0xe5e7eb);
+    scene.background = new THREE.Color(0xf1f5f9);
 
     // Camera
     const aspect = container.clientWidth / container.clientHeight;
     camera = new THREE.PerspectiveCamera(50, aspect, 0.1, 1000);
-    camera.position.set(0, -100, 100);
+    camera.position.set(100, -150, 150);
     camera.up.set(0, 0, 1); // Z-up for CAD
 
     // Renderer
     renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.setPixelRatio(window.devicePixelRatio);
     renderer.setSize(container.clientWidth, container.clientHeight);
     container.appendChild(renderer.domElement);
 
     // Controls
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
+    controls.target.set(30, 0, 0); // Focus slightly offset from origin
 
     // Lights
-    const ambi = new THREE.AmbientLight(0xffffff, 0.6);
+    const ambi = new THREE.AmbientLight(0xffffff, 0.7);
     scene.add(ambi);
-    const dir = new THREE.DirectionalLight(0xffffff, 0.8);
-    dir.position.set(50, -50, 100);
+    const dir = new THREE.DirectionalLight(0xffffff, 0.9);
+    dir.position.set(50, -100, 100);
     scene.add(dir);
 
-    // Helpers
-    scene.add(new THREE.GridHelper(200, 20).rotateX(Math.PI / 2));
-    scene.add(new THREE.AxesHelper(20));
+    // Grid Helper (10mm subdivisions)
+    const grid = new THREE.GridHelper(300, 30, 0x94a3b8, 0xcbd5e1);
+    grid.rotateX(Math.PI / 2);
+    scene.add(grid);
 
-    // Debug Cube (to verify viewer works)
-    const debugBox = new THREE.Mesh(
-        new THREE.BoxGeometry(2, 2, 2),
-        new THREE.MeshBasicMaterial({ color: 0xff0000 })
-    );
-    debugBox.position.z = 1; // Sit on grid
-    scene.add(debugBox);
+    // Axes Helper
+    const axes = new THREE.AxesHelper(30);
+    scene.add(axes);
+
+    // Visual Ruler Labels
+    addRulerLabels(scene);
 
     // Loop
     function animate() {
@@ -59,26 +61,49 @@ export function initViewer(container) {
     });
 }
 
-export function updateMesh(manifoldMesh) {
-    console.log("Updating Mesh:", manifoldMesh);
+function addRulerLabels(scene) {
+    const interval = 10;
+    const count = 10; // Up to 100mm
 
+    for (let i = 1; i <= count; i++) {
+        const val = i * interval;
+        const sprite = createTextSprite(val + "mm");
+        sprite.position.set(val, -5, 0.2); // Along X-axis
+        scene.add(sprite);
+    }
+}
+
+function createTextSprite(text) {
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    canvas.width = 256;
+    canvas.height = 128;
+
+    ctx.fillStyle = '#475569';
+    ctx.font = 'Bold 48px Inter, Arial';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, 128, 64);
+
+    const texture = new THREE.CanvasTexture(canvas);
+    const material = new THREE.SpriteMaterial({ map: texture, transparent: true });
+    const sprite = new THREE.Sprite(material);
+    sprite.scale.set(12, 6, 1);
+    return sprite;
+}
+
+export function updateMesh(manifoldMesh) {
     if (currentMesh) {
         scene.remove(currentMesh);
         currentMesh.geometry.dispose();
     }
 
-    if (!manifoldMesh || manifoldMesh.triVerts.length === 0) {
-        console.warn("Received empty mesh from Manifold.");
-        return;
-    }
+    if (!manifoldMesh || manifoldMesh.triVerts.length === 0) return;
 
-    // Convert Manifold Mesh to Three.js BufferGeometry
     const geometry = new THREE.BufferGeometry();
-
-    // Handle potential extra properties in vertProperties (stride)
     const numProp = manifoldMesh.numProp || 3;
+
     if (numProp > 3) {
-        // Extract only x, y, z if there are extra properties
         const posData = new Float32Array(manifoldMesh.numVert * 3);
         for (let i = 0; i < manifoldMesh.numVert; i++) {
             posData[i * 3 + 0] = manifoldMesh.vertProperties[i * numProp + 0];
@@ -94,17 +119,14 @@ export function updateMesh(manifoldMesh) {
     geometry.computeVertexNormals();
 
     const material = new THREE.MeshPhongMaterial({
-        color: 0x2563eb,
+        color: 0x3b82f6,
         specular: 0x111111,
-        shininess: 30,
-        flatShading: false,
-        side: THREE.DoubleSide // Ensure visibility from both sides
+        shininess: 40,
+        side: THREE.DoubleSide
     });
 
     currentMesh = new THREE.Mesh(geometry, material);
     scene.add(currentMesh);
-
-    console.log(`Mesh added to scene: ${manifoldMesh.numVert} vertices, ${manifoldMesh.triVerts.length / 3} triangles.`);
 }
 
 export function downloadSTL(filename) {

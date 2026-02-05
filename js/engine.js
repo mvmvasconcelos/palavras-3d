@@ -99,12 +99,10 @@ export async function generateTextModel(params) {
         return null;
     }
 
-    // --- CENTERING ---
+    // --- ORIGIN ALIGNMENT (Bottom-Left to 0,0) ---
     const b = cs.bounds();
     if (isFiniteCoord(b.min)) {
-        const mx = (getVal(b.min, 0) + getVal(b.max, 0)) / 2;
-        const my = (getVal(b.min, 1) + getVal(b.max, 1)) / 2;
-        cs = cs.translate([-mx, -my]);
+        cs = cs.translate([-getVal(b.min, 0), -getVal(b.min, 1)]);
     }
 
     const textModel = cs.extrude(height);
@@ -124,13 +122,19 @@ export async function generateTextModel(params) {
         holeCS = CrossSection.circle(hexRad, 6);
     }
 
-    const holeLength = Math.max(300, curX * 2);
+    const bFinal = cs.bounds();
+    const midX = (getVal(bFinal.min, 0) + getVal(bFinal.max, 0)) / 2;
+    const midY = (getVal(bFinal.min, 1) + getVal(bFinal.max, 1)) / 2;
+    const holeLength = Math.max(300, getVal(bFinal.max, 0) * 2);
+
     let holeModel = holeCS.extrude(holeLength).translate([0, 0, -holeLength / 2]);
 
     if (holeOrient === 'horizontal') {
-        holeModel = holeModel.rotate([0, 90, 0]).translate([0, 0, height / 2]);
+        // Horizontal hole passes through the middle (midY) and is at mid-height (height/2)
+        holeModel = holeModel.rotate([0, 90, 0]).translate([midX, midY, height / 2]);
     } else {
-        holeModel = holeModel.rotate([90, 0, 0]).translate([0, 0, height / 2]);
+        // Vertical hole passes through the middle (midX, midY)
+        holeModel = holeModel.rotate([90, 0, 0]).translate([midX, midY, height / 2]);
     }
 
     // --- SUBTRACTION ---

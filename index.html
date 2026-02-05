@@ -9,7 +9,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link
-        href="https://fonts.googleapis.com/css2?family=Bangers&family=Montserrat:wght@700&family=Pacifico&family=Roboto:wght@700&display=swap"
+        href="https://fonts.googleapis.com/css2?family=Anton&family=Bangers&family=Dancing+Script:wght@700&family=Fredoka+One&family=Lobster&family=Montserrat:wght@700&family=Pacifico&family=Playfair+Display:wght@700&family=Roboto:wght@700&display=swap"
         rel="stylesheet">
     <link rel="stylesheet" href="css/style.css">
 
@@ -32,20 +32,34 @@
         <aside id="sidebar">
             <h1>Palavras 3D</h1>
 
+            <!-- Section: Text & Font -->
+            <div class="divider">Texto e Tipografia</div>
             <div class="control-group">
-                <label>Texto</label>
+                <label>Texto do Modelo</label>
                 <input type="text" id="textLine1" value="Vinicius" placeholder="Digite seu texto...">
             </div>
 
             <div class="control-group">
                 <label for="fontSelect">Escolher Fonte</label>
                 <select id="fontSelect">
-                    <option value="Roboto" style="font-family: 'Roboto', sans-serif;">Roboto (Moderno)</option>
-                    <option value="Pacifico" style="font-family: 'Pacifico', cursive;">Pacifico (Manuscrita)</option>
-                    <option value="Montserrat" style="font-family: 'Montserrat', sans-serif;">Montserrat (Sólida)
-                    </option>
-                    <option value="Bangers" style="font-family: 'Bangers', system-ui;">Bangers (Divertida)</option>
+                    <option value="Roboto" style="font-family: 'Roboto';">Roboto (Moderno)</option>
+                    <option value="Montserrat" style="font-family: 'Montserrat';">Montserrat (Sólido)</option>
+                    <option value="Bangers" style="font-family: 'Bangers';">Bangers (Cartoon)</option>
+                    <option value="Anton" style="font-family: 'Anton';">Anton (Impacto)</option>
+                    <option value="Fredoka One" style="font-family: 'Fredoka One';">Fredoka (Arredondado)</option>
+                    <option value="Pacifico" style="font-family: 'Pacifico';">Pacifico (Manuscrito)</option>
+                    <option value="Dancing Script" style="font-family: 'Dancing Script';">Dancing (Elegante)</option>
+                    <option value="Lobster" style="font-family: 'Lobster';">Lobster (Clássico)</option>
+                    <option value="Playfair Display" style="font-family: 'Playfair Display';">Playfair (Sério)</option>
                 </select>
+            </div>
+
+            <div class="control-group">
+                <label for="fontThickness">Grossura / Peso (Offset mm)</label>
+                <div class="slider-container">
+                    <input type="range" id="fontThickness" value="0" min="-1" max="2" step="0.1">
+                    <span id="fontThicknessValue">0mm</span>
+                </div>
             </div>
 
             <div class="control-group">
@@ -54,20 +68,12 @@
             </div>
 
             <div class="control-group">
-                <label for="fontThickness">Grossura da Fonte (Offset mm)</label>
-                <div class="slider-container">
-                    <input type="range" id="fontThickness" value="0" min="-1" max="2" step="0.1">
-                    <span id="fontThicknessValue">0mm</span>
-                </div>
-            </div>
-            <!-- Font Settings -->
-            <div class="control-group">
-                <label for="fontSize">Tamanho Fonte (Altura aproximada mm)</label>
+                <label for="fontSize">Tamanho da Fonte (mm)</label>
                 <input type="number" id="fontSize" value="20" min="5" max="100">
             </div>
 
             <div class="control-group">
-                <label for="height">Altura (Espessura mm - Mín 10mm)</label>
+                <label for="height">Altura Total (Espessura mm)</label>
                 <input type="number" id="height" value="12" min="10" max="50">
             </div>
 
@@ -111,7 +117,7 @@
     </div>
 
     <!-- App Entry Point -->
-    <script type="module" src="js/main.js?v=2.8"></script>
+    <script type="module" src="js/main.js?v=2.91"></script>
 </body>
 
 </html>

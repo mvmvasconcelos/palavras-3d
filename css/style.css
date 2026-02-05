@@ -1,10 +1,11 @@
 :root {
-    --primary: #2563eb;
-    --primary-hover: #1d4ed8;
-    --bg: #f8fafc;
-    --sidebar-bg: #ffffff;
-    --text: #1e293b;
+    --primary: #3b82f6;
+    --primary-hover: #2563eb;
+    --bg: #f1f5f9;
+    --sidebar-bg: rgba(255, 255, 255, 0.9);
+    --text: #0f172a;
     --border: #e2e8f0;
+    --card-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
 }
 
 * {
@@ -13,11 +14,10 @@
 
 body {
     margin: 0;
-    font-family: 'Segoe UI', system-ui, sans-serif;
+    font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
     color: var(--text);
     background: var(--bg);
     overflow: hidden;
-    /* Fix view to window */
 }
 
 #app {
@@ -28,60 +28,68 @@ body {
 
 /* Sidebar */
 #sidebar {
-    width: 320px;
+    width: 350px;
     background: var(--sidebar-bg);
+    backdrop-filter: blur(8px);
     border-right: 1px solid var(--border);
     padding: 1.5rem;
     display: flex;
     flex-direction: column;
-    gap: 1.2rem;
+    gap: 1rem;
     overflow-y: auto;
     z-index: 10;
-    box-shadow: 2px 0 10px rgba(0, 0, 0, 0.05);
+    box-shadow: 10px 0 15px -3px rgb(0 0 0 / 0.05);
 }
 
 h1 {
-    margin: 0 0 0.5rem 0;
-    font-size: 1.5rem;
+    margin: 0 0 0.2rem 0;
+    font-size: 1.8rem;
+    font-weight: 800;
+    letter-spacing: -0.025em;
     color: var(--primary);
 }
 
 .control-group {
     display: flex;
     flex-direction: column;
-    gap: 0.4rem;
+    gap: 0.3rem;
+    padding: 0.8rem;
+    background: #ffffff;
+    border-radius: 8px;
+    border: 1px solid var(--border);
 }
 
 label {
-    font-size: 0.9rem;
-    font-weight: 500;
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #64748b;
 }
 
 input,
 select {
     padding: 0.6rem;
-    border: 1px solid var(--border);
+    border: 1px solid #cbd5e1;
     border-radius: 6px;
-    font-size: 1rem;
-    background: white;
+    font-size: 0.95rem;
+    background: #ffffff;
+    transition: all 0.2s;
+    outline: none;
 }
 
-.divider {
-    font-size: 0.8rem;
-    font-weight: 700;
-    text-transform: uppercase;
-    color: #94a3b8;
-    margin: 1.5rem 0 0.5rem 0;
-    padding-bottom: 0.3rem;
-    border-bottom: 1px solid var(--border);
+input:focus,
+select:focus {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
 }
 
 button {
     padding: 0.8rem;
     border: none;
-    border-radius: 6px;
+    border-radius: 8px;
     cursor: pointer;
-    font-weight: 600;
+    font-weight: 700;
     font-size: 1rem;
     transition: all 0.2s;
 }
@@ -89,17 +97,24 @@ button {
 .primary-btn {
     background: var(--primary);
     color: white;
-    margin-top: auto;
-    /* Push to bottom */
+    margin-top: 0.5rem;
+    box-shadow: 0 4px 6px -1px rgba(59, 130, 246, 0.4);
 }
 
 .primary-btn:hover {
     background: var(--primary-hover);
+    transform: translateY(-1px);
+    box-shadow: 0 10px 15px -3px rgba(59, 130, 246, 0.4);
 }
 
 .secondary-btn {
-    background: #e2e8f0;
+    background: #ffffff;
     color: #475569;
+    border: 1px solid #cbd5e1;
+}
+
+.secondary-btn:hover {
+    background: #f8fafc;
 }
 
 .secondary-btn:disabled {
@@ -107,11 +122,21 @@ button {
     cursor: not-allowed;
 }
 
+.divider {
+    font-size: 0.75rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    color: #94a3b8;
+    margin: 1.5rem 0 0.3rem 0;
+    padding-left: 0.5rem;
+    border-left: 3px solid var(--primary);
+}
+
 .status-msg {
     font-size: 0.85rem;
     color: #64748b;
     text-align: center;
-    min-height: 1.2em;
+    padding: 0.5rem;
 }
 
 /* Viewer */
