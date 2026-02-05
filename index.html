@@ -40,6 +40,8 @@
                         title="Texto Simples">Simples</button>
                     <button type="button" class="type-btn" data-value="contour"
                         title="Base de Contorno (Modo 1)">Contorno</button>
+                    <button type="button" class="type-btn" data-value="wave"
+                        title="Efeito Ondulado (Modo 2)">Ondulado</button>
                 </div>
             </div>
 
@@ -115,6 +117,31 @@
                 </div>
             </div>
 
+            <!-- Modo 2 Specific Controls -->
+            <div id="modo2Controls" style="display: none;">
+                <div class="control-group">
+                    <label for="waveAmplitude">Amplitude da Onda (mm)</label>
+                    <div class="slider-container">
+                        <input type="range" id="waveAmplitude" value="4.0" min="0" max="15" step="0.5">
+                        <span id="waveAmplitudeValue" class="value-display">4.0mm</span>
+                    </div>
+                </div>
+                <div class="control-group">
+                    <label for="waveFrequency">Frequência / Ritmo</label>
+                    <div class="slider-container">
+                        <input type="range" id="waveFrequency" value="1.0" min="0.1" max="3" step="0.1">
+                        <span id="waveFrequencyValue" class="value-display">1.0</span>
+                    </div>
+                </div>
+                <div class="control-group">
+                    <label for="slantRange">Inclinação Máxima (°)</label>
+                    <div class="slider-container">
+                        <input type="range" id="slantRange" value="0" min="-25" max="25" step="1">
+                        <span id="slantValue" class="value-display">0°</span>
+                    </div>
+                </div>
+            </div>
+
             <!-- Pen Topper Settings -->
             <div class="divider">Configurações do Enfeite (Lápis/Caneta)</div>
 
@@ -157,7 +184,7 @@
     </div>
 
     <!-- App Entry Point -->
-    <script type="module" src="js/main.js?v=2.96"></script>
+    <script type="module" src="js/main.js?v=2.97"></script>
 </body>
 
 </html>

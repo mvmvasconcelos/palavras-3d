@@ -45,160 +45,174 @@ export async function generateTextModel(params) {
     const spacing = Number(params.letterSpacing) || 0;
     const thickness = Number(params.fontThickness) || 0;
 
-    // --- SINGLE PASS POLYGON COLLECTION ---
-    // Instead of unioning CrossSections (unstable), we collect ALL polygons
-    // into one list and create the CAD object in one go.
-    let allPolys = [];
-    let curX = 0;
+    // --- MODE SELECTION & CONSTRUCTION ---
+    let textModel = null;
+    let baseModel = null;
 
-    for (let i = 0; i < text.length; i++) {
-        const char = text[i];
-        const glyph = font.charToGlyph(char);
+    if (params.mode === 'wave') {
+        const amp = Number(params.waveAmplitude) || 0;
+        const freq = Number(params.waveFrequency) || 1.0;
+        const slant = Number(params.slantRange) || 0;
 
-        // Get path at origin (0,0), we will offset the points manually
-        const glyphPath = glyph.getPath(0, 0, size);
-        const charPolys = pathToPolygons(glyphPath, curX); // Pass curX to offset points
+        let charModels = [];
+        let curX = 0;
 
-        if (charPolys.length > 0) {
-            // Force Winding and add to master list
+        for (let i = 0; i < text.length; i++) {
+            const char = text[i];
+            const glyph = font.charToGlyph(char);
+            const glyphPath = glyph.getPath(0, 0, size);
+
+            // Collect polygons for THIS character at local origin
+            const charPolys = pathToPolygons(glyphPath, 0);
+            if (charPolys.length === 0) {
+                curX += font.getAdvanceWidth(char, size) + spacing;
+                continue;
+            }
+
+            let charCS = CrossSection.ofPolygons(charPolys.map(forceCCW), 1);
+            if (thickness !== 0) {
+                const offset = charCS.offset(thickness, 1, 2.0);
+                charCS.delete();
+                charCS = offset;
+            }
+
+            // Transformation calculation
+            const hShift = amp * Math.sin(i * freq);
+            const rotation = (slant * Math.PI / 180) * Math.cos(i * freq);
+
+            let charM = charCS.extrude(height);
+            charCS.delete();
+
+            // Apply rotation around Z (tilting)
+            if (slant !== 0) {
+                charM = charM.rotate([0, 0, rotation * (180 / Math.PI)]);
+            }
+
+            // Apply translation (Horizontal position + Wave height)
+            charM = charM.translate([curX, hShift, 0]);
+
+            charModels.push(charM);
+            curX += font.getAdvanceWidth(char, size) + spacing;
+        }
+
+        if (charModels.length === 0) return null;
+
+        // Stable Union Loop
+        textModel = charModels[0];
+        for (let i = 1; i < charModels.length; i++) {
+            const next = textModel.add(charModels[i]);
+            textModel.delete();
+            charModels[i].delete();
+            textModel = next;
+        }
+    } else {
+        // --- SIMPLE / MODO 1: SINGLE PASS ASSEMBLY ---
+        let allPolys = [];
+        let curX = 0;
+        for (let i = 0; i < text.length; i++) {
+            const char = text[i];
+            const charPolys = pathToPolygons(font.charToGlyph(char).getPath(0, 0, size), curX);
             charPolys.forEach(p => allPolys.push(forceCCW(p)));
+            curX += font.getAdvanceWidth(char, size) + spacing;
         }
 
-        // Advance cursor
-        const advance = font.getAdvanceWidth(char, size);
-        curX += advance + spacing;
-    }
-
-    if (allPolys.length === 0) return null;
-
-    console.log(`- v2.8: Collected ${allPolys.length} polygons for "${text}"`);
-
-    // --- CAD CONSTRUCTION ---
-    let cs;
-    try {
-        cs = CrossSection.ofPolygons(allPolys, 1); // Use EvenOdd rule
-
-        if (cs.isEmpty()) {
-            console.warn("- EvenOdd empty, trying NonZero...");
-            cs = CrossSection.ofPolygons(allPolys, 0);
-        }
-
-        // Apply Thickness (Offset) to the whole word at once
+        let cs = CrossSection.ofPolygons(allPolys, 1);
         if (thickness !== 0) {
-            const offsetCS = cs.offset(thickness, 1, 2.0);
+            const offset = cs.offset(thickness, 1, 2.0);
             cs.delete();
-            cs = offsetCS;
+            cs = offset;
         }
-    } catch (e) {
-        console.error("- CAD Construction Crash:", e);
-        return null;
-    }
 
-    if (cs.isEmpty()) {
+        if (params.mode === 'contour') {
+            const baseOffset = parseFloat(params.baseOffset) || 3.0;
+            const textProtrusion = parseFloat(params.textProtrusion) || 3.0;
+
+            const baseCS = cs.offset(baseOffset, 1, 2.0);
+            baseModel = baseCS.extrude(height);
+            baseCS.delete();
+
+            textModel = cs.extrude(height + textProtrusion);
+        } else {
+            textModel = cs.extrude(height);
+        }
         cs.delete();
-        return null;
     }
 
-    // --- ORIGIN ALIGNMENT (Bottom-Left to 0,0) ---
-    const b = cs.bounds();
-    if (isFiniteCoord(b.min)) {
-        cs = cs.translate([-getVal(b.min, 0), -getVal(b.min, 1)]);
+    // --- HOLE SYSTEM ---
+    const bounds = textModel.getBounds();
+    const centerX = (bounds.min[0] + bounds.max[0]) / 2;
+    const centerY = (bounds.min[1] + bounds.max[1]) / 2;
+
+    const holeModel = createHole(params, {
+        min: [bounds.min[0], bounds.min[1]],
+        max: [bounds.max[0], bounds.max[1]]
+    }, height);
+
+    // --- FINAL SUBTRACTION & RESULT ---
+    let textMesh = null;
+    let baseMesh = null;
+
+    if (params.mode === 'contour' && baseModel) {
+        const finalBase = baseModel.subtract(holeModel);
+        const finalText = textModel.subtract(holeModel);
+
+        baseMesh = finalBase.getMesh();
+        textMesh = finalText.getMesh();
+
+        finalBase.delete();
+        finalText.delete();
+        baseModel.delete();
+        textModel.delete();
+    } else {
+        const finalModel = textModel.subtract(holeModel);
+        textMesh = finalModel.getMesh();
+
+        finalModel.delete();
+        textModel.delete();
     }
 
-    // --- HOLE LOGIC ---
+    holeModel.delete();
+
+    return { textMesh, baseMesh };
+}
+
+// Factor out Hole construction for cleaner main flow
+function createHole(params, bounds, height) {
     const holeDia = Number(params.holeDiameter) || 7.5;
     const holeType = params.holeType || 'circle';
     const holeOrient = params.holeOrientation || 'horizontal';
-
     const holeRad = holeDia / 2;
-    let holeCS;
 
+    let holeCS;
     if (holeType === 'circle') {
         holeCS = CrossSection.circle(holeRad, 32);
     } else if (holeType === 'hex') {
         const hexRad = holeRad / Math.cos(Math.PI / 6);
         holeCS = CrossSection.circle(hexRad, 6);
     } else if (holeType === 'square') {
-        // Now 'holeDia' acts as Side Length for square
         const squareRad = (holeDia / 2) * Math.sqrt(2);
         holeCS = CrossSection.circle(squareRad, 4).rotate(45);
     } else if (holeType === 'triangle') {
-        // Now 'holeDia' acts as Side Length for equilateral triangle
         const triRad = holeDia / Math.sqrt(3);
         holeCS = CrossSection.circle(triRad, 3).rotate(90);
     } else {
         holeCS = CrossSection.circle(holeRad, 32);
     }
 
-    // Determine bounds for hole positioning *before* any model creation
-    // For contour mode, we use the baseCS bounds for hole positioning
-    // For simple mode, we use the cs bounds
-    let boundsForHole;
-    if (params.mode === 'contour') {
-        const baseOffset = parseFloat(params.baseOffset) || 3.0;
-        const tempBaseCS = cs.offset(baseOffset, 1, 2.0);
-        boundsForHole = tempBaseCS.bounds();
-        tempBaseCS.delete(); // Clean up temporary CS
-    } else {
-        boundsForHole = cs.bounds();
-    }
-
-    const midX = (getVal(boundsForHole.min, 0) + getVal(boundsForHole.max, 0)) / 2;
-    const midY = (getVal(boundsForHole.min, 1) + getVal(boundsForHole.max, 1)) / 2;
-    const holeLength = Math.max(300, getVal(boundsForHole.max, 0) * 2);
+    const midX = (bounds.min[0] + bounds.max[0]) / 2;
+    const midY = (bounds.min[1] + bounds.max[1]) / 2;
+    const holeLength = Math.max(300, bounds.max[0] * 2);
 
     let holeModel = holeCS.extrude(holeLength).translate([0, 0, -holeLength / 2]);
+    holeCS.delete();
 
     if (holeOrient === 'horizontal') {
-        // Horizontal hole passes through the middle (midY) and is at mid-height (height/2)
         holeModel = holeModel.rotate([0, 90, 0]).translate([midX, midY, height / 2]);
     } else {
-        // Vertical hole passes through the middle (midX, midY)
         holeModel = holeModel.rotate([90, 0, 0]).translate([midX, midY, height / 2]);
     }
 
-    // --- SUBTRACTION & RESULT ---
-    let textMesh = null;
-    let baseMesh = null;
-
-    if (params.mode === 'contour') {
-        const baseOffset = parseFloat(params.baseOffset) || 3.0;
-        const textProtrusion = parseFloat(params.textProtrusion) || 3.0;
-
-        const baseCS = cs.offset(baseOffset, 1, 2.0);
-        const baseModel = baseCS.extrude(height);
-        const textModel = cs.extrude(height + textProtrusion);
-
-        // Subtract hole from each part independently to keep them separate for coloring
-        const FinalBase = baseModel.subtract(holeModel);
-        const FinalText = textModel.subtract(holeModel);
-
-        baseMesh = FinalBase.getMesh();
-        textMesh = FinalText.getMesh();
-
-        // Cleanup
-        baseCS.delete();
-        baseModel.delete();
-        textModel.delete();
-        FinalBase.delete();
-        FinalText.delete();
-    } else {
-        // Simple Mode
-        const finalModel = cs.extrude(height);
-        const result = finalModel.subtract(holeModel);
-        textMesh = result.getMesh();
-
-        // Cleanup
-        finalModel.delete();
-        result.delete();
-    }
-
-    // Final Engine Cleanup
-    cs.delete();
-    holeCS.delete();
-    holeModel.delete();
-
-    return { textMesh, baseMesh };
+    return holeModel;
 }
 
 function forceCCW(poly) {

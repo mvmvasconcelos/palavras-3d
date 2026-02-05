@@ -18,9 +18,16 @@ const els = {
     status: document.getElementById('status'),
     buildModeGroup: document.getElementById('buildModeGroup'),
     modo1Controls: document.getElementById('modo1Controls'),
+    modo2Controls: document.getElementById('modo2Controls'),
     textHeight: document.getElementById('textHeight'),
     baseOffset: document.getElementById('baseOffset'),
     baseOffsetValue: document.getElementById('baseOffsetValue'),
+    waveAmplitude: document.getElementById('waveAmplitude'),
+    waveAmplitudeValue: document.getElementById('waveAmplitudeValue'),
+    waveFrequency: document.getElementById('waveFrequency'),
+    waveFrequencyValue: document.getElementById('waveFrequencyValue'),
+    slantRange: document.getElementById('slantRange'),
+    slantValue: document.getElementById('slantValue'),
     textColor: document.getElementById('textColor'),
     baseColor: document.getElementById('baseColor'),
     loading: document.getElementById('loadingOverlay'),
@@ -73,8 +80,9 @@ async function app() {
                 btn.classList.add('active');
                 currentBuildMode = btn.dataset.value;
 
-                // Toggle Modo 1 specific UI
+                // Toggle specific UI
                 els.modo1Controls.style.display = (currentBuildMode === 'contour') ? 'block' : 'none';
+                els.modo2Controls.style.display = (currentBuildMode === 'wave') ? 'block' : 'none';
                 generate(false);
             });
         });
@@ -98,13 +106,23 @@ async function app() {
         const debouncedGenerate = debounce(() => generate(false), 400);
 
         // Inputs triggering generate
-        [els.line1, els.size, els.height, els.textHeight, els.baseOffset, els.holeDiameter, els.holeOrientation, els.letterSpacing, els.fontThickness, els.textColor, els.baseColor]
+        [els.line1, els.size, els.height, els.textHeight, els.baseOffset, els.holeDiameter, els.holeOrientation, els.letterSpacing, els.fontThickness, els.textColor, els.baseColor,
+        els.waveAmplitude, els.waveFrequency, els.slantRange]
             .forEach(el => el.addEventListener('input', () => {
                 if (el === els.fontThickness) {
                     els.thicknessValue.innerText = parseFloat(el.value).toFixed(1) + "mm";
                 }
                 if (el === els.baseOffset) {
                     els.baseOffsetValue.innerText = parseFloat(el.value).toFixed(1) + "mm";
+                }
+                if (el === els.waveAmplitude) {
+                    els.waveAmplitudeValue.innerText = parseFloat(el.value).toFixed(1) + "mm";
+                }
+                if (el === els.waveFrequency) {
+                    els.waveFrequencyValue.innerText = parseFloat(el.value).toFixed(1);
+                }
+                if (el === els.slantRange) {
+                    els.slantValue.innerText = el.value + "°";
                 }
                 debouncedGenerate();
             }));
@@ -153,7 +171,11 @@ async function generate(showOverlay = false) {
                 // Modo 1
                 mode: els.buildModeGroup.querySelector('.active').dataset.value,
                 baseOffset: parseFloat(els.baseOffset.value) || 3.0,
-                textProtrusion: parseFloat(els.textHeight.value) || 3.0
+                textProtrusion: parseFloat(els.textHeight.value) || 3.0,
+                // Modo 2
+                waveAmplitude: parseFloat(els.waveAmplitude.value) || 0,
+                waveFrequency: parseFloat(els.waveFrequency.value) || 1,
+                slantRange: parseFloat(els.slantRange.value) || 0
             };
 
             const meshData = await generateTextModel(params);
