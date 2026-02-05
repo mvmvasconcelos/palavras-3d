@@ -79,7 +79,18 @@ async function app() {
             });
         });
 
-        // 4. Bind Events
+        // 4. Hole Type Group Initialization
+        const typeButtons = els.holeTypeGroup.querySelectorAll('.type-btn');
+        typeButtons.forEach(btn => {
+            btn.addEventListener('click', () => {
+                const buttons = els.holeTypeGroup.querySelectorAll('.type-btn');
+                buttons.forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                generate(false);
+            });
+        });
+
+        // 5. Bind Events
         els.btnGen.addEventListener('click', () => generate(true));
         els.btnDown.addEventListener('click', () => downloadSTL("enfeite-3d"));
 
