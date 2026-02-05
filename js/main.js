@@ -4,8 +4,15 @@ import { initManifold, generateTextModel } from './engine.js';
 // DOM Elements
 const els = {
     line1: document.getElementById('textLine1'),
+    fontSelect: document.getElementById('fontSelect'),
+    letterSpacing: document.getElementById('letterSpacing'),
+    fontThickness: document.getElementById('fontThickness'),
+    thicknessValue: document.getElementById('fontThicknessValue'),
     size: document.getElementById('fontSize'),
     height: document.getElementById('height'),
+    holeDiameter: document.getElementById('holeDiameter'),
+    holeType: document.getElementById('holeType'),
+    holeOrientation: document.getElementById('holeOrientation'),
     btnGen: document.getElementById('btnGenerate'),
     btnDown: document.getElementById('btnDownload'),
     status: document.getElementById('status'),
@@ -13,8 +20,16 @@ const els = {
     loadingText: document.getElementById('loadingText')
 };
 
+// Available Fonts (Stable TTF URLs)
+const FONTS = {
+    'Roboto': 'https://fonts.gstatic.com/s/roboto/v50/KFOMCnqEu92Fr1ME7kSn66aGLdTylUAMQXC89YmC2DPNWubEbVmUiA8.ttf',
+    'Pacifico': 'https://fonts.gstatic.com/s/pacifico/v23/FwZY7-Qmy14u9lezJ-6H6Mw.ttf',
+    'Montserrat': 'https://fonts.gstatic.com/s/montserrat/v31/JTUHjIg1_i6t8kCHKm4532VJOt5-QNFgpCtr6Hw5aX8.ttf',
+    'Bangers': 'https://fonts.gstatic.com/s/bangers/v25/FeVQS0BTqb0h60ACH55Q3Q.ttf'
+};
+
 /**
- * Debounce helper to prevent excessive rendering calls
+ * Debounce helper
  */
 function debounce(func, wait) {
     let timeout;
@@ -30,19 +45,36 @@ async function app() {
         initViewer(document.getElementById('viewer'));
 
         // 2. Init Manifold & Fonts
-        setLoading("Carregando Motor 3D...", true);
+        setLoading("Iniciando Motor 3D...", true);
         await initManifold();
+
+        // Initial font load
+        await loadFont(els.fontSelect.value);
         setLoading("Pronto", false);
 
         // 3. Bind Events
         els.btnGen.addEventListener('click', () => generate(true));
-        els.btnDown.addEventListener('click', () => downloadSTL("meu-modelo"));
+        els.btnDown.addEventListener('click', () => downloadSTL("enfeite-3d"));
 
         // Live Preview Bindings
         const debouncedGenerate = debounce(() => generate(false), 400);
-        els.line1.addEventListener('input', debouncedGenerate);
-        els.size.addEventListener('input', debouncedGenerate);
-        els.height.addEventListener('input', debouncedGenerate);
+
+        // Inputs triggering generate
+        [els.line1, els.size, els.height, els.holeDiameter, els.holeType, els.holeOrientation, els.letterSpacing, els.fontThickness]
+            .forEach(el => el.addEventListener('input', () => {
+                if (el === els.fontThickness) {
+                    els.thicknessValue.innerText = el.value + "mm";
+                }
+                debouncedGenerate();
+            }));
+
+        // Font change triggering load then generate
+        els.fontSelect.addEventListener('change', async () => {
+            setLoading("Trocando fonte...", true);
+            await loadFont(els.fontSelect.value);
+            setLoading("Pronto", false);
+            generate(false);
+        });
 
         // Generate initial model
         generate(false);
@@ -51,6 +83,13 @@ async function app() {
         console.error("Fatal Error:", e);
         setLoading("Erro Fatal: " + e.message, true);
     }
+}
+
+async function loadFont(fontName) {
+    const url = FONTS[fontName] || FONTS['Roboto'];
+    const { initManifold: loadFontInEngine } = await import('./engine.js');
+    // We repurpose initManifold or use a dedicated method
+    await loadFontInEngine(url);
 }
 
 async function generate(showOverlay = false) {
@@ -62,8 +101,14 @@ async function generate(showOverlay = false) {
         try {
             const params = {
                 text: els.line1.value || "Vinicius",
-                size: parseFloat(els.size.value) || 30,
-                height: parseFloat(els.height.value) || 5
+                size: parseFloat(els.size.value) || 20,
+                height: Math.max(10, parseFloat(els.height.value) || 12),
+                holeDiameter: parseFloat(els.holeDiameter.value) || 7.5,
+                holeType: els.holeType.value,
+                holeOrientation: els.holeOrientation.value,
+                letterSpacing: parseFloat(els.letterSpacing.value) || 0,
+                fontThickness: parseFloat(els.fontThickness.value) || 0,
+                fontName: els.fontSelect.value
             };
 
             const mesh = await generateTextModel(params);
@@ -71,13 +116,13 @@ async function generate(showOverlay = false) {
             if (mesh) {
                 updateMesh(mesh);
                 els.btnDown.disabled = false;
-                setLoading("Modelo Atualizado!", false);
+                setLoading("Modelo Pronto!", false);
             } else {
-                setLoading("Falha ao gerar modelo.", false);
+                setLoading("Erro: Geometria vazia.", false);
             }
 
         } catch (e) {
-            console.error(e);
+            console.error("Generate Error:", e);
             setLoading("Erro: " + e.message, false);
         }
     });

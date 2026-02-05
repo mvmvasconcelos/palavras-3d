@@ -3,29 +3,34 @@ import opentype from 'opentype.js';
 
 let manifold, CrossSection;
 let font;
+let currentFontUrl = "";
 
-const FONT_URL = "https://fonts.gstatic.com/s/roboto/v30/KFOmCnqEu92Fr1Mu4mxM.woff";
+const ROBOTO_URL = "https://fonts.gstatic.com/s/roboto/v50/KFOMCnqEu92Fr1ME7kSn66aGLdTylUAMQXC89YmC2DPNWubEbVmUiA8.ttf";
 
-export async function initManifold() {
-    manifold = await manifoldModule({
-        locateFile: (path) => {
-            if (path.endsWith('.wasm')) {
-                return `https://cdn.jsdelivr.net/npm/manifold-3d@2.5.1/manifold.wasm`;
+export async function initManifold(fontUrl = ROBOTO_URL) {
+    if (!manifold) {
+        manifold = await manifoldModule({
+            locateFile: (path) => {
+                if (path.endsWith('.wasm')) {
+                    return `https://cdn.jsdelivr.net/npm/manifold-3d@2.5.1/manifold.wasm`;
+                }
+                return path;
             }
-            return path;
+        });
+        if (manifold.setup) manifold.setup();
+        CrossSection = manifold.CrossSection;
+    }
+
+    if (currentFontUrl !== fontUrl) {
+        try {
+            const res = await fetch(fontUrl);
+            const buffer = await res.arrayBuffer();
+            font = opentype.parse(buffer);
+            currentFontUrl = fontUrl;
+            console.log("v2.8 Engine - Font Updated: " + fontUrl);
+        } catch (e) {
+            console.error("Font loading error:", e);
         }
-    });
-
-    if (manifold.setup) manifold.setup();
-    CrossSection = manifold.CrossSection;
-
-    try {
-        const res = await fetch(FONT_URL);
-        const buffer = await res.arrayBuffer();
-        font = opentype.parse(buffer);
-        console.log("3D Engine & Font Ready.");
-    } catch (e) {
-        console.error("Initialization error:", e);
     }
 }
 
@@ -36,35 +41,65 @@ export async function generateTextModel(params) {
     if (!text) return null;
 
     const size = Number(params.size) || 20;
-    const height = Number(params.height) || 5;
+    const height = Math.max(10, Number(params.height) || 12);
+    const spacing = Number(params.letterSpacing) || 0;
+    const thickness = Number(params.fontThickness) || 0;
 
-    // 1. Get Path
-    const path = font.getPath(text, 0, 0, size);
+    // --- SINGLE PASS POLYGON COLLECTION ---
+    // Instead of unioning CrossSections (unstable), we collect ALL polygons
+    // into one list and create the CAD object in one go.
+    let allPolys = [];
+    let curX = 0;
 
-    // 2. Convert to Polygons and Ensure CCW (Counter-Clockwise)
-    // Manifold 2.5 requires CCW winding for solid areas.
-    let polygons = pathToPolygons(path).map(p => forceCCW(p));
+    for (let i = 0; i < text.length; i++) {
+        const char = text[i];
+        const glyph = font.charToGlyph(char);
 
-    if (polygons.length === 0) return null;
+        // Get path at origin (0,0), we will offset the points manually
+        const glyphPath = glyph.getPath(0, 0, size);
+        const charPolys = pathToPolygons(glyphPath, curX); // Pass curX to offset points
 
-    // 3. Create CrossSection
+        if (charPolys.length > 0) {
+            // Force Winding and add to master list
+            charPolys.forEach(p => allPolys.push(forceCCW(p)));
+        }
+
+        // Advance cursor
+        const advance = font.getAdvanceWidth(char, size);
+        curX += advance + spacing;
+    }
+
+    if (allPolys.length === 0) return null;
+
+    console.log(`- v2.8: Collected ${allPolys.length} polygons for "${text}"`);
+
+    // --- CAD CONSTRUCTION ---
     let cs;
     try {
-        // Use EvenOdd (1) fill rule to handle holes in letters (a, o, e, etc.)
-        cs = CrossSection.ofPolygons(polygons, 1);
+        cs = CrossSection.ofPolygons(allPolys, 1); // Use EvenOdd rule
 
-        // Fallback to NonZero (0) if EvenOdd yields empty geometry
         if (cs.isEmpty()) {
-            cs = CrossSection.ofPolygons(polygons, 0);
+            console.warn("- EvenOdd empty, trying NonZero...");
+            cs = CrossSection.ofPolygons(allPolys, 0);
+        }
+
+        // Apply Thickness (Offset) to the whole word at once
+        if (thickness !== 0) {
+            const offsetCS = cs.offset(thickness, 1, 2.0);
+            cs.delete();
+            cs = offsetCS;
         }
     } catch (e) {
-        console.error("CAD Generation Error:", e);
+        console.error("- CAD Construction Crash:", e);
         return null;
     }
 
-    if (cs.isEmpty()) return null;
+    if (cs.isEmpty()) {
+        cs.delete();
+        return null;
+    }
 
-    // 4. Centering
+    // --- CENTERING ---
     const b = cs.bounds();
     if (isFiniteCoord(b.min)) {
         const mx = (getVal(b.min, 0) + getVal(b.max, 0)) / 2;
@@ -72,20 +107,46 @@ export async function generateTextModel(params) {
         cs = cs.translate([-mx, -my]);
     }
 
-    // 5. Extrude to 3D
-    const model = cs.extrude(height);
-    const mesh = model.getMesh();
+    const textModel = cs.extrude(height);
 
-    // Clean up WASM memory
-    if (cs.delete) cs.delete();
+    // --- HOLE LOGIC ---
+    const holeDia = Number(params.holeDiameter) || 7.5;
+    const holeType = params.holeType || 'circle';
+    const holeOrient = params.holeOrientation || 'horizontal';
+
+    const holeRad = holeDia / 2;
+    const segments = holeType === 'hex' ? 6 : 32;
+    let holeCS = CrossSection.circle(holeRad, segments);
+
+    if (holeType === 'hex') {
+        const hexRad = holeRad / Math.cos(Math.PI / 6);
+        holeCS.delete();
+        holeCS = CrossSection.circle(hexRad, 6);
+    }
+
+    const holeLength = Math.max(300, curX * 2);
+    let holeModel = holeCS.extrude(holeLength).translate([0, 0, -holeLength / 2]);
+
+    if (holeOrient === 'horizontal') {
+        holeModel = holeModel.rotate([0, 90, 0]).translate([0, 0, height / 2]);
+    } else {
+        holeModel = holeModel.rotate([90, 0, 0]).translate([0, 0, height / 2]);
+    }
+
+    // --- SUBTRACTION ---
+    const finalModel = textModel.subtract(holeModel);
+    const mesh = finalModel.getMesh();
+
+    // Final Cleanup
+    cs.delete();
+    holeCS.delete();
+    textModel.delete();
+    holeModel.delete();
+    finalModel.delete();
 
     return mesh;
 }
 
-/**
- * Calculates polygon area to determine winding order.
- * Reverses points if necessary to ensure Counter-Clockwise (CCW).
- */
 function forceCCW(poly) {
     if (poly.length < 3) return poly;
     let area = 0;
@@ -94,8 +155,6 @@ function forceCCW(poly) {
         area += poly[i][0] * poly[j][1];
         area -= poly[j][0] * poly[i][1];
     }
-    // area > 0 is CCW in standard Cartesian space.
-    // Our Y is flipped in pathToPolygons, so area < 0 would be CW.
     if (area < 0) return poly.reverse();
     return poly;
 }
@@ -111,13 +170,14 @@ function isFiniteCoord(v) {
     return typeof x === 'number' && isFinite(x);
 }
 
-function pathToPolygons(path) {
+function pathToPolygons(path, offsetX = 0) {
     const polys = [];
     let cur = [];
-    let x = 0, y = 0, sx = 0, sy = 0;
+    let x = 0, y = 0;
 
     function add(px, py) {
-        const nx = Number(px.toFixed(4));
+        // Apply historical text alignment fixes and the new horizontal offset
+        const nx = Number((px + offsetX).toFixed(4));
         const ny = Number((-py).toFixed(4));
         if (cur.length > 0) {
             const last = cur[cur.length - 1];
@@ -130,14 +190,13 @@ function pathToPolygons(path) {
         switch (cmd.type) {
             case 'M':
                 if (cur.length >= 3) {
-                    // Remove explicit closure for Manifold
                     const f = cur[0]; const l = cur[cur.length - 1];
                     if (f[0] === l[0] && f[1] === l[1]) cur.pop();
                     if (cur.length >= 3) polys.push(cur);
                 }
                 cur = [];
                 add(cmd.x, cmd.y);
-                x = cmd.x; y = cmd.y; sx = cmd.x; sy = cmd.y;
+                x = cmd.x; y = cmd.y;
                 break;
             case 'L':
                 add(cmd.x, cmd.y);

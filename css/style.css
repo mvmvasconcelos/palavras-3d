@@ -7,14 +7,17 @@
     --border: #e2e8f0;
 }
 
-* { box-sizing: border-box; }
+* {
+    box-sizing: border-box;
+}
 
 body {
     margin: 0;
     font-family: 'Segoe UI', system-ui, sans-serif;
     color: var(--text);
     background: var(--bg);
-    overflow: hidden; /* Fix view to window */
+    overflow: hidden;
+    /* Fix view to window */
 }
 
 #app {
@@ -34,7 +37,7 @@ body {
     gap: 1.2rem;
     overflow-y: auto;
     z-index: 10;
-    box-shadow: 2px 0 10px rgba(0,0,0,0.05);
+    box-shadow: 2px 0 10px rgba(0, 0, 0, 0.05);
 }
 
 h1 {
@@ -54,11 +57,23 @@ label {
     font-weight: 500;
 }
 
-input {
+input,
+select {
     padding: 0.6rem;
     border: 1px solid var(--border);
     border-radius: 6px;
     font-size: 1rem;
+    background: white;
+}
+
+.divider {
+    font-size: 0.8rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: #94a3b8;
+    margin: 1.5rem 0 0.5rem 0;
+    padding-bottom: 0.3rem;
+    border-bottom: 1px solid var(--border);
 }
 
 button {
@@ -74,10 +89,13 @@ button {
 .primary-btn {
     background: var(--primary);
     color: white;
-    margin-top: auto; /* Push to bottom */
+    margin-top: auto;
+    /* Push to bottom */
 }
 
-.primary-btn:hover { background: var(--primary-hover); }
+.primary-btn:hover {
+    background: var(--primary-hover);
+}
 
 .secondary-btn {
     background: #e2e8f0;
@@ -100,13 +118,17 @@ button {
 #viewer {
     flex: 1;
     position: relative;
-    background: #e5e7eb; /* Light gray for 3D bg */
+    background: #e5e7eb;
+    /* Light gray for 3D bg */
 }
 
 #loadingOverlay {
     position: absolute;
-    top: 0; left: 0; right: 0; bottom: 0;
-    background: rgba(255,255,255,0.9);
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(255, 255, 255, 0.9);
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -125,5 +147,26 @@ button {
 }
 
 @keyframes spin {
-    to { transform: rotate(360deg); }
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+.slider-container {
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+}
+
+.slider-container input[type="range"] {
+    flex: 1;
+    padding: 0;
+    cursor: pointer;
+}
+
+.slider-container span {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--primary);
+    min-width: 40px;
 }

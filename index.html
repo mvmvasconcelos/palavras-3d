@@ -5,6 +5,12 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Palavras 3D - Generator</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Bangers&family=Montserrat:wght@700&family=Pacifico&family=Roboto:wght@700&display=swap"
+        rel="stylesheet">
     <link rel="stylesheet" href="css/style.css">
 
     <!-- Import Maps for clean module functionality without bundlers -->
@@ -27,18 +33,66 @@
             <h1>Palavras 3D</h1>
 
             <div class="control-group">
-                <label>Texto (Linha 1)</label>
-                <input type="text" id="textLine1" value="Vinicius">
+                <label>Texto</label>
+                <input type="text" id="textLine1" value="Vinicius" placeholder="Digite seu texto...">
             </div>
 
             <div class="control-group">
-                <label>Tamanho Fonte</label>
-                <input type="number" id="fontSize" value="30">
+                <label for="fontSelect">Escolher Fonte</label>
+                <select id="fontSelect">
+                    <option value="Roboto" style="font-family: 'Roboto', sans-serif;">Roboto (Moderno)</option>
+                    <option value="Pacifico" style="font-family: 'Pacifico', cursive;">Pacifico (Manuscrita)</option>
+                    <option value="Montserrat" style="font-family: 'Montserrat', sans-serif;">Montserrat (Sólida)
+                    </option>
+                    <option value="Bangers" style="font-family: 'Bangers', system-ui;">Bangers (Divertida)</option>
+                </select>
             </div>
 
             <div class="control-group">
-                <label>Altura (Extrusão)</label>
-                <input type="number" id="height" value="5">
+                <label for="letterSpacing">Espaçamento entre Letras (mm)</label>
+                <input type="number" id="letterSpacing" value="0.0" min="-10" max="10" step="0.1">
+            </div>
+
+            <div class="control-group">
+                <label for="fontThickness">Grossura da Fonte (Offset mm)</label>
+                <div class="slider-container">
+                    <input type="range" id="fontThickness" value="0" min="-1" max="2" step="0.1">
+                    <span id="fontThicknessValue">0mm</span>
+                </div>
+            </div>
+            <!-- Font Settings -->
+            <div class="control-group">
+                <label for="fontSize">Tamanho Fonte (Altura aproximada mm)</label>
+                <input type="number" id="fontSize" value="20" min="5" max="100">
+            </div>
+
+            <div class="control-group">
+                <label for="height">Altura (Espessura mm - Mín 10mm)</label>
+                <input type="number" id="height" value="12" min="10" max="50">
+            </div>
+
+            <!-- Pen Topper Settings -->
+            <div class="divider">Configurações do Enfeite (Lápis/Caneta)</div>
+
+            <div class="control-group">
+                <label for="holeDiameter">Diâmetro do Furo (mm)</label>
+                <input type="number" id="holeDiameter" value="7.5" min="2" max="20" step="0.5">
+            </div>
+
+            <div class="control-group">
+                <label for="holeType">Tipo de Furo</label>
+                <select id="holeType">
+                    <option value="circle">Circular (Padrão)</option>
+                    <option value="hex">Hexagonal (Lápis)</option>
+                </select>
+            </div>
+
+            <div class="control-group">
+                <label for="holeOrientation">Orientação do Furo</label>
+                <select id="holeOrientation">
+                    <option value="horizontal">Horizontal (Atravessa a palavra)</option>
+                    <option value="vertical">Vertical (De cima para baixo)</option>
+                </select>
             </div>
 
             <button id="btnGenerate" class="primary-btn">Gerar Modelo 3D</button>
@@ -57,7 +111,7 @@
     </div>
 
     <!-- App Entry Point -->
-    <script type="module" src="js/main.js?v=2.5"></script>
+    <script type="module" src="js/main.js?v=2.8"></script>
 </body>
 
 </html>
