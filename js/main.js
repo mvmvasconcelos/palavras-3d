@@ -1,6 +1,3 @@
-import { initViewer, updateMesh, downloadSTL } from './viewer.js';
-import { initManifold, generateTextModel } from './engine.js';
-
 // DOM Elements
 const els = {
     line1: document.getElementById('textLine1'),
@@ -46,6 +43,10 @@ const FONTS = {
     'Playfair Display': 'https://fonts.gstatic.com/s/playfairdisplay/v40/nuFvD-vYSZviVYUb_rj3ij__anPXJzDwcbmjWBN2PKdFvXDXbtY.ttf'
 };
 
+// Global State
+let currentBuildMode = 'simple';
+let randomSeed = Math.random();
+
 /**
  * Debounce helper
  */
@@ -71,8 +72,6 @@ async function app() {
         setLoading("Pronto", false);
 
         // 3. Build Mode Initialization
-        let currentBuildMode = 'simple';
-        let randomSeed = Math.random();
         const modeButtons = els.buildModeGroup.querySelectorAll('.type-btn');
         modeButtons.forEach(btn => {
             btn.addEventListener('click', () => {
