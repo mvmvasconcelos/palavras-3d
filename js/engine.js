@@ -27,7 +27,7 @@ export async function initManifold(fontUrl = ROBOTO_URL) {
             const buffer = await res.arrayBuffer();
             font = opentype.parse(buffer);
             currentFontUrl = fontUrl;
-            console.log("v2.8 Engine - Font Updated: " + fontUrl);
+            console.log("v3.0 Engine - Font Updated: " + fontUrl);
         } catch (e) {
             console.error("Font loading error:", e);
         }
