@@ -90,10 +90,10 @@ async function app() {
         [els.line1, els.size, els.height, els.textHeight, els.baseOffset, els.holeDiameter, els.holeOrientation, els.letterSpacing, els.fontThickness, els.textColor, els.baseColor]
             .forEach(el => el.addEventListener('input', () => {
                 if (el === els.fontThickness) {
-                    els.thicknessValue.innerText = el.value + "mm";
+                    els.thicknessValue.innerText = parseFloat(el.value).toFixed(1) + "mm";
                 }
                 if (el === els.baseOffset) {
-                    els.baseOffsetValue.innerText = el.value + "mm";
+                    els.baseOffsetValue.innerText = parseFloat(el.value).toFixed(1) + "mm";
                 }
                 debouncedGenerate();
             }));
