@@ -113,13 +113,23 @@ export async function generateTextModel(params) {
     const holeOrient = params.holeOrientation || 'horizontal';
 
     const holeRad = holeDia / 2;
-    const segments = holeType === 'hex' ? 6 : 32;
-    let holeCS = CrossSection.circle(holeRad, segments);
+    let holeCS;
 
-    if (holeType === 'hex') {
+    if (holeType === 'circle') {
+        holeCS = CrossSection.circle(holeRad, 32);
+    } else if (holeType === 'hex') {
         const hexRad = holeRad / Math.cos(Math.PI / 6);
-        holeCS.delete();
         holeCS = CrossSection.circle(hexRad, 6);
+    } else if (holeType === 'square') {
+        // Now 'holeDia' acts as Side Length for square
+        const squareRad = (holeDia / 2) * Math.sqrt(2);
+        holeCS = CrossSection.circle(squareRad, 4).rotate(45);
+    } else if (holeType === 'triangle') {
+        // Now 'holeDia' acts as Side Length for equilateral triangle
+        const triRad = holeDia / Math.sqrt(3);
+        holeCS = CrossSection.circle(triRad, 3).rotate(90);
+    } else {
+        holeCS = CrossSection.circle(holeRad, 32);
     }
 
     const bFinal = cs.bounds();

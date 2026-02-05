@@ -11,7 +11,7 @@ const els = {
     size: document.getElementById('fontSize'),
     height: document.getElementById('height'),
     holeDiameter: document.getElementById('holeDiameter'),
-    holeType: document.getElementById('holeType'),
+    holeTypeGroup: document.getElementById('holeTypeGroup'),
     holeOrientation: document.getElementById('holeOrientation'),
     btnGen: document.getElementById('btnGenerate'),
     btnDown: document.getElementById('btnDownload'),
@@ -57,6 +57,18 @@ async function app() {
         await loadFont(els.fontSelect.value);
         setLoading("Pronto", false);
 
+        // 3. Hole Type Group Initialization
+        let currentHoleType = 'circle';
+        const typeButtons = els.holeTypeGroup.querySelectorAll('.type-btn');
+        typeButtons.forEach(btn => {
+            btn.addEventListener('click', () => {
+                typeButtons.forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                currentHoleType = btn.dataset.value;
+                generate(false);
+            });
+        });
+
         // 3. Bind Events
         els.btnGen.addEventListener('click', () => generate(true));
         els.btnDown.addEventListener('click', () => downloadSTL("enfeite-3d"));
@@ -65,7 +77,7 @@ async function app() {
         const debouncedGenerate = debounce(() => generate(false), 400);
 
         // Inputs triggering generate
-        [els.line1, els.size, els.height, els.holeDiameter, els.holeType, els.holeOrientation, els.letterSpacing, els.fontThickness]
+        [els.line1, els.size, els.height, els.holeDiameter, els.holeOrientation, els.letterSpacing, els.fontThickness]
             .forEach(el => el.addEventListener('input', () => {
                 if (el === els.fontThickness) {
                     els.thicknessValue.innerText = el.value + "mm";
@@ -109,7 +121,7 @@ async function generate(showOverlay = false) {
                 size: parseFloat(els.size.value) || 20,
                 height: Math.max(10, parseFloat(els.height.value) || 12),
                 holeDiameter: parseFloat(els.holeDiameter.value) || 7.5,
-                holeType: els.holeType.value,
+                holeType: els.holeTypeGroup.querySelector('.active').dataset.value,
                 holeOrientation: els.holeOrientation.value,
                 letterSpacing: parseFloat(els.letterSpacing.value) || 0,
                 fontThickness: parseFloat(els.fontThickness.value) || 0,
