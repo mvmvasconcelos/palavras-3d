@@ -2,8 +2,9 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { STLExporter } from 'three/addons/exporters/STLExporter.js';
 
-let scene, camera, perspectiveCamera, orthographicCamera, renderer, controls, currentMesh;
-let activeCamera;
+let scene, camera, renderer, controls, currentMesh;
+
+console.log("v3.12 Viewer - Permanent Orthographic Camera Ready");
 
 export function initViewer(container) {
     // Scene
@@ -12,23 +13,15 @@ export function initViewer(container) {
 
     const aspect = container.clientWidth / container.clientHeight;
 
-    // 1. Perspective Camera
-    perspectiveCamera = new THREE.PerspectiveCamera(50, aspect, 0.1, 1000);
-    perspectiveCamera.position.set(60, -90, 107);
-    perspectiveCamera.up.set(0, 0, 1);
-
-    // 2. Orthographic Camera
+    // Orthographic Camera (Permanent for distortion-free technical viewing)
     const frustumSize = 150;
-    orthographicCamera = new THREE.OrthographicCamera(
+    camera = new THREE.OrthographicCamera(
         frustumSize * aspect / -2, frustumSize * aspect / 2,
         frustumSize / 2, frustumSize / -2,
         0.1, 1000
     );
-    orthographicCamera.position.copy(perspectiveCamera.position);
-    orthographicCamera.up.set(0, 0, 1);
-
-    camera = perspectiveCamera;
-    activeCamera = 'perspective';
+    camera.position.set(60, -90, 107);
+    camera.up.set(0, 0, 1);
 
     // Renderer
     renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
@@ -70,42 +63,16 @@ export function initViewer(container) {
         const height = container.clientHeight;
         const newAspect = width / height;
 
-        // Update Perspective
-        perspectiveCamera.aspect = newAspect;
-        perspectiveCamera.updateProjectionMatrix();
-
         // Update Orthographic
         const fSize = 150;
-        orthographicCamera.left = -fSize * newAspect / 2;
-        orthographicCamera.right = fSize * newAspect / 2;
-        orthographicCamera.top = fSize / 2;
-        orthographicCamera.bottom = -fSize / 2;
-        orthographicCamera.updateProjectionMatrix();
+        camera.left = -fSize * newAspect / 2;
+        camera.right = fSize * newAspect / 2;
+        camera.top = fSize / 2;
+        camera.bottom = -fSize / 2;
+        camera.updateProjectionMatrix();
 
         renderer.setSize(width, height);
     });
-}
-
-/**
- * Switch camera mode
- */
-export function setCameraMode(isOrthographic) {
-    const oldCam = camera;
-    if (isOrthographic) {
-        camera = orthographicCamera;
-        activeCamera = 'orthographic';
-    } else {
-        camera = perspectiveCamera;
-        activeCamera = 'perspective';
-    }
-
-    // Sync position and rotation
-    camera.position.copy(oldCam.position);
-    camera.quaternion.copy(oldCam.quaternion);
-
-    // Update OrbitControls
-    controls.object = camera;
-    controls.update();
 }
 
 function addRulerLabels(scene) {

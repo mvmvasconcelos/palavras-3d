@@ -1,4 +1,4 @@
-import { initViewer, updateMesh, downloadSTL, setCameraMode } from './viewer.js';
+import { initViewer, updateMesh, downloadSTL } from './viewer.js?v=3.12';
 import { initManifold, generateTextModel } from './engine.js';
 
 // DOM Elements
@@ -30,8 +30,7 @@ const els = {
     textColor: document.getElementById('textColor'),
     baseColor: document.getElementById('baseColor'),
     loading: document.getElementById('loadingOverlay'),
-    loadingText: document.getElementById('loadingText'),
-    checkOrthographic: document.getElementById('checkOrthographic')
+    loadingText: document.getElementById('loadingText')
 };
 
 // Available Fonts (Stable TTF URLs)
@@ -126,11 +125,6 @@ async function app() {
                 }
                 debouncedGenerate();
             }));
-
-        // Camera Toggle
-        els.checkOrthographic.addEventListener('change', (e) => {
-            setCameraMode(e.target.checked);
-        });
 
         // Font change triggering load then generate
         els.fontSelect.addEventListener('change', async () => {
