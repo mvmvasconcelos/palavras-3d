@@ -34,9 +34,14 @@ Este documento serve como uma base de conhecimento para futuros projetos 3D base
 *   **Fontes Manuscritas:** Têm caminhos que se cruzam. Use a regra de preenchimento **EvenOdd (1)** no `CrossSection.ofPolygons(polys, 1)` para lidar com as intersecções corretamente.
 *   **Links de Fontes:** Use links diretos para arquivos **.ttf** brutos em vez de APIs de CSS quando estiver usando `opentype.js` no navegador. Isso evita erros de CORS e redirecionamentos.
 
-### ⚡ Performance (Live Preview)
-*   Sempre utilize **Debounce** (atraso de ~400ms) nos inputs. Gerar 3D a cada tecla pressionada causará lentidão.
-*   Use `requestAnimationFrame` para separar a lógica de inputs pesados da renderização da interface (UI).
+### ⚡ Performance & Viewport
+*   **Debounce:** Sempre utilize um atraso de ~400ms nos inputs. Gerar 3D a cada tecla causa lentidão severa.
+*   **Câmera Ortográfica:** Em aplicações de CAD/3D Printing, a perspectiva distorce as bordas (efeito olho de peixe). O uso de `OrthographicCamera` garante que alinhamentos e escalas sejam visualmente precisos de qualquer ângulo.
+*   **Z-Up:** O sistema deve sempre usar `camera.up.set(0, 0, 1)` para alinhar o visualizador com o plano de construção (X-Y) das fatiadoras 3D.
+
+### 📐 Lógica de Alturas (Modo 2)
+*   **Determinismo:** Evite variações puramente aleatórias (`Math.random()`) em modelos que precisam de validação física. 
+*   **Lógica Par/Ímpar:** O uso de módulo (`i % 2`) para alternar alturas garante um ritmo visual estável e facilita o cálculo automático do furo central (Hole System), que pode ser posicionado na média das alturas de forma previsível.
 
 ## 3. Estrutura Proposta para Novos Modelos
 Ao criar um novo modelo (Ex: Base de Abajur, chaveiro):
