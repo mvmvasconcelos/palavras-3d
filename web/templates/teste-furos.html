@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Teste de Furos 3D</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/three@0.137.0/build/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.137.0/examples/js/loaders/STLLoader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.137.0/examples/js/controls/OrbitControls.js"></script>
+</head>
+<body>
+    <div class="app-container">
+        <aside class="sidebar">
+            <div class="header">
+                <h2>Teste de Furos 3D</h2>
+                <div class="model-info">
+                    <h3>Calibração de tolerâncias</h3>
+                    <p><a href="/" style="color:#FFF;">&larr; Voltar para o Gerador principal</a></p>
+                </div>
+            </div>
+
+            <div class="sidebar-content" style="overflow-y: auto; padding-right: 5px;">
+                <div class="control-group">
+                    <label>Comprimento da Base (X) mm</label>
+                    <div class="range-input">
+                        <input type="number" id="base_length" value="50" step="1">
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <label>Largura da Base (Y) mm</label>
+                    <div class="range-input">
+                        <input type="number" id="base_width" value="30" step="1">
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <label>Altura da Base (Z) mm</label>
+                    <div class="range-input">
+                        <input type="number" id="base_height" value="2" step="0.5">
+                    </div>
+                </div>
+
+                <details class="control-group" open>
+                    <summary>Furos (Diâmetros em mm)</summary>
+                    <div id="holes_container" class="sub-controls">
+                        <!-- Holes will go here -->
+                    </div>
+                    <button id="addHoleBtn" class="secondary-btn" style="margin-top:10px;">+ Adicionar Furo</button>
+                </details>
+
+                <div class="control-group">
+                    <button id="generateBtn" class="primary-btn">Gerar Modelo de Teste</button>
+                    <a id="downloadBtn" class="secondary-btn" style="display:none; background-color: #e67e22; color: #fff; text-decoration: none;" download>Download STL</a>
+                </div>
+            </div>
+        </aside>
+
+        <main class="viewer-area">
+            <div id="viewer"></div>
+            <div class="loading-overlay" id="loading" style="display: none;">
+                <div class="spinner"></div>
+                <p>Gerando peça de teste no OpenSCAD...</p>
+            </div>
+        </main>
+    </div>
+
+    <script src="/static/js/teste-furos.js"></script>
+</body>
+</html>

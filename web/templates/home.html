@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Palavras-3D | Galeria de Modelos</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <style>
+        .gallery-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+            gap: 20px;
+            padding: 20px;
+        }
+
+        .model-card {
+            background: #2a2a2a;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+            transition: transform 0.2s;
+            text-decoration: none;
+            color: #fff;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .model-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 6px 12px rgba(0, 0, 0, 0.4);
+        }
+
+        .model-card img {
+            width: 100%;
+            height: 150px;
+            object-fit: cover;
+            border-bottom: 2px solid #444;
+            background: #111;
+        }
+
+        .model-card-content {
+            padding: 15px;
+            display: flex;
+            flex-direction: column;
+            flex-grow: 1;
+        }
+
+        .model-card-content h3 {
+            margin: 0 0 10px 0;
+            font-size: 1.2rem;
+            color: #4facfe;
+        }
+
+        .model-card-content p {
+            font-size: 0.9rem;
+            color: #ccc;
+            margin: 0;
+            flex-grow: 1;
+        }
+
+        .navbar {
+            background: #222;
+            padding: 15px 20px;
+            border-bottom: 1px solid #333;
+            display: flex;
+            align-items: center;
+        }
+
+        .navbar h1 {
+            margin: 0;
+            font-size: 1.5rem;
+            color: #fff;
+        }
+    </style>
+</head>
+
+<body
+    style="margin: 0; background-color: #1a1a1a; color: #fff; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;">
+    <div class="navbar">
+        <h1>🛠️ Palavras-3D Multi-Modelos</h1>
+    </div>
+
+    <div style="max-width: 1200px; margin: 0 auto; padding: 20px;">
+        <h2 style="margin-left: 20px;">Escolha um Modelo para Personalizar</h2>
+
+        <div class="gallery-grid">
+            {% for model in models %}
+            <a href="/model/{{ model.id }}" class="model-card">
+                <img src="{{ model.thumbnail }}" alt="{{ model.name }}"
+                    onerror="this.src='https://via.placeholder.com/250x150?text=Sem+Foto'">
+                <div class="model-card-content">
+                    <h3>{{ model.name }}</h3>
+                    <p>{{ model.description }}</p>
+                </div>
+            </a>
+            {% else %}
+            <p style="margin-left: 20px; color: #888;">Nenhum modelo encontrado na pasta 'models/'.</p>
+            {% endfor %}
+        </div>
+    </div>
+</body>
+
+</html>

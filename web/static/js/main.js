@@ -164,9 +164,16 @@ function triggerGeneration() {
     dimsInfo.style.display = 'none';
 
     // Construct font name
-    const family = document.getElementById('font_family').value;
-    const isBold = document.getElementById('font_bold').checked;
-    const isItalic = document.getElementById('font_italic').checked;
+    const fontSelect = document.getElementById('font_family');
+    const selectedOpt = fontSelect.options[fontSelect.selectedIndex];
+    const family = fontSelect.value;
+
+    // Check actual capabilities to avoid sending invalid styles
+    const hasBold = selectedOpt.dataset.hasBold === "true";
+    const hasItalic = selectedOpt.dataset.hasItalic === "true";
+
+    const isBold = document.getElementById('font_bold').checked && hasBold;
+    const isItalic = document.getElementById('font_italic').checked && hasItalic;
 
     let style = "";
     if (isBold && isItalic) style = ":style=Bold Italic";
@@ -181,7 +188,7 @@ function triggerGeneration() {
         text_size_1: parseFloat(document.getElementById('text_size_1').value),
         text_size_2: parseFloat(document.getElementById('text_size_2').value),
         font_name: fontName,
-        // text_size: parseFloat(document.getElementById('text_size').value), // Removed
+        font_filename: selectedOpt.dataset.filename || null, // Send filename if available
         letter_height: parseFloat(document.getElementById('letter_height').value),
         base_height: parseFloat(document.getElementById('base_height').value),
         outline_margin: parseFloat(document.getElementById('outline_margin').value),
@@ -223,11 +230,14 @@ function triggerGeneration() {
                 downloadBtn.style.display = 'block';
 
                 const downloadZipBtn = document.getElementById('downloadZipBtn');
+                const download3mfBtn = document.getElementById('download3mfBtn');
                 if (data.zip_url) {
                     downloadZipBtn.href = data.zip_url;
                     downloadZipBtn.style.display = 'block';
+                    if (download3mfBtn) download3mfBtn.style.display = 'block';
                 } else {
                     downloadZipBtn.style.display = 'none';
+                    if (download3mfBtn) download3mfBtn.style.display = 'none';
                 }
 
                 // Show help text
@@ -517,15 +527,63 @@ function update2DPreview() {
     }
 }
 
-// Add listeners to new inputs
+// Update UI based on font capabilities
+function updateFontCapabilities() {
+    const fontSelect = document.getElementById('font_family');
+    const boldCheck = document.getElementById('font_bold');
+    const italicCheck = document.getElementById('font_italic');
+
+    if (fontSelect.selectedIndex === -1) return;
+
+    const opt = fontSelect.options[fontSelect.selectedIndex];
+    const hasBold = opt.dataset.hasBold === "true";
+    const hasItalic = opt.dataset.hasItalic === "true";
+
+    // Update checkboxes
+    if (!hasBold) {
+        boldCheck.checked = false;
+        boldCheck.disabled = true;
+        boldCheck.parentElement.style.opacity = "0.5";
+        boldCheck.parentElement.title = "Esta fonte não possui variação Negrito";
+    } else {
+        boldCheck.disabled = false;
+        boldCheck.parentElement.style.opacity = "1";
+        boldCheck.parentElement.title = "";
+    }
+
+    if (!hasItalic) {
+        italicCheck.checked = false;
+        italicCheck.disabled = true;
+        italicCheck.parentElement.style.opacity = "0.5";
+        italicCheck.parentElement.title = "Esta fonte não possui variação Itálico";
+    } else {
+        italicCheck.disabled = false;
+        italicCheck.parentElement.style.opacity = "1";
+        italicCheck.parentElement.title = "";
+    }
+}
+
+// Add valid listener for font change to update capabilities
+document.getElementById('font_family').addEventListener('change', () => {
+    updateFontCapabilities();
+    update2DPreview();
+});
+
+// Also call on initial load (after fonts loaded)
+// See loadFonts().then(...)
+
+// ... (rest of listeners)
+
 document.getElementById('text_line_1').addEventListener('input', update2DPreview);
 document.getElementById('text_line_2').addEventListener('input', update2DPreview);
-document.getElementById('text_size_1').addEventListener('input', update2DPreview); // Just triggers update
+document.getElementById('text_size_1').addEventListener('input', update2DPreview);
 document.getElementById('text_size_2').addEventListener('input', update2DPreview);
 
-document.getElementById('font_family').addEventListener('change', update2DPreview);
+// document.getElementById('font_family').addEventListener('change', update2DPreview); // Replaced above
 document.getElementById('font_bold').addEventListener('change', update2DPreview);
 document.getElementById('font_italic').addEventListener('change', update2DPreview);
+// ...
+
 document.getElementById('base_color').addEventListener('input', update2DPreview);
 document.getElementById('letters_color').addEventListener('input', update2DPreview);
 document.getElementById('outline_margin').addEventListener('input', update2DPreview);
@@ -549,6 +607,49 @@ update2DPreview();
 document.getElementById('generateBtn').addEventListener('click', () => {
     triggerGeneration();
 });
+
+// 3MF Export functionality
+function export3MF() {
+    if (meshes.length === 0) return;
+    try {
+        const exporter = new THREE['3MFExporter']();
+
+        // Group meshes
+        const group = new THREE.Group();
+        meshes.forEach(mesh => {
+            const clone = mesh.clone();
+            clone.material = mesh.material.clone();
+
+            // Name the mesh to be readable in slicers
+            clone.name = (group.children.length === 0) ? "Base" : "Text";
+            group.add(clone);
+        });
+
+        // Add to scene to calculate correct positions from world
+        scene.add(group);
+        const arrayBuffer = exporter.parse(group);
+        scene.remove(group); // remove immediately after parsing
+
+        const blob = new Blob([arrayBuffer], { type: 'application/vnd.ms-pki.securable-3mf' });
+
+        const link = document.createElement('a');
+        link.style.display = 'none';
+        link.href = URL.createObjectURL(blob);
+        link.download = 'palavras-3d-multicolor.3mf';
+
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    } catch (err) {
+        console.error("Erro exportando 3MF:", err);
+        alert("Erro ao exportar 3MF: " + err);
+    }
+}
+
+const download3mfBtn = document.getElementById('download3mfBtn');
+if (download3mfBtn) {
+    download3mfBtn.addEventListener('click', export3MF);
+}
 
 // Initialize 3D Viewer on load
 // Initialize 3D Viewer on load
@@ -629,18 +730,18 @@ const fileInput = document.getElementById('font_file_input');
 
 // Default fonts (Google Fonts loaded in index.html)
 const defaultFonts = [
-    { name: "Comic Neue", family: "'Comic Neue', cursive" },
-    { name: "Fredoka One", family: "'Fredoka One', cursive" },
-    { name: "Chewy", family: "'Chewy', cursive" },
-    { name: "Bangers", family: "'Bangers', cursive" },
-    { name: "Lobster", family: "'Lobster', cursive" },
-    { name: "Patrick Hand", family: "'Patrick Hand', cursive" },
-    { name: "Righteous", family: "'Righteous', cursive" },
-    { name: "Russo One", family: "'Russo One', sans-serif" },
-    { name: "Arial", family: "Arial, sans-serif" },
-    { name: "Verdana", family: "Verdana, sans-serif" },
-    { name: "Times New Roman", family: "'Times New Roman', serif" },
-    { name: "Courier New", family: "'Courier New', monospace" }
+    { name: "Comic Neue", family: "'Comic Neue', cursive", hasBold: true, hasItalic: false }, // Google Fonts says 400, 700
+    { name: "Fredoka One", family: "'Fredoka One', cursive", hasBold: false, hasItalic: false }, // Regular 400 only
+    { name: "Chewy", family: "'Chewy', cursive", hasBold: false, hasItalic: false, filename: "Chewy-Regular.ttf" }, // Bundled
+    { name: "Bangers", family: "'Bangers', cursive", hasBold: false, hasItalic: false, filename: "Bangers-Regular.ttf" }, // Bundled
+    { name: "Lobster", family: "'Lobster', cursive", hasBold: false, hasItalic: false }, // Regular 400 only
+    { name: "Patrick Hand", family: "'Patrick Hand', cursive", hasBold: false, hasItalic: false }, // Regular 400 only
+    { name: "Righteous", family: "'Righteous', cursive", hasBold: false, hasItalic: false }, // Regular 400 only
+    { name: "Russo One", family: "'Russo One', sans-serif", hasBold: false, hasItalic: false }, // Regular 400 only
+    { name: "Arial", family: "Arial, sans-serif", hasBold: true, hasItalic: true },
+    { name: "Verdana", family: "Verdana, sans-serif", hasBold: true, hasItalic: true },
+    { name: "Times New Roman", family: "'Times New Roman', serif", hasBold: true, hasItalic: true },
+    { name: "Courier New", family: "'Courier New', monospace", hasBold: true, hasItalic: true }
 ];
 
 async function loadFonts() {
@@ -657,21 +758,30 @@ async function loadFonts() {
     fontSelect.innerHTML = '';
 
     // 3. Helper to create option
-    const addOption = (label, value, fontFamily, isCustom = false, filename = null) => {
+    const addOption = (label, value, fontFamily, isCustom = false, filename = null, hasBold = true, hasItalic = true) => {
         const opt = document.createElement('option');
         opt.textContent = label;
         opt.value = value;
         opt.style.fontFamily = fontFamily;
+
+        // Store capabilities
+        opt.dataset.hasBold = hasBold;
+        opt.dataset.hasItalic = hasItalic;
+
+        if (filename) {
+            opt.dataset.filename = filename;
+        }
+
         if (isCustom) {
             opt.dataset.custom = "true";
-            opt.dataset.filename = filename;
+            opt.dataset.filename = filename; // redundant but safe
             opt.textContent = `📂 ${label}`;
         }
         fontSelect.appendChild(opt);
     };
 
     // 4. Add Default Fonts
-    defaultFonts.forEach(f => addOption(f.name, f.name, f.family));
+    defaultFonts.forEach(f => addOption(f.name, f.name, f.family, false, f.filename || null, f.hasBold, f.hasItalic));
 
     // 5. Add Custom Fonts & Inject CSS
     // We create a <style> block for custom fonts
@@ -694,7 +804,11 @@ async function loadFonts() {
             }
         `;
 
-        addOption(f.name, f.name, `'${cssFontFamily}', sans-serif`, true, f.filename);
+        // Assume custom fonts are Regular only for now, or default to all?
+        // Usually, single TTF is one style. Let's assume Regular (no bold/italic support natively)
+        // unless the user uploads a bold variant, but our system treats them as separate fonts.
+        // So safe bet: hasBold=false, hasItalic=false for uploaded single files.
+        addOption(f.name, f.name, `'${cssFontFamily}', sans-serif`, true, f.filename, false, false);
     });
     styleBlock.textContent = cssRules;
 }
@@ -745,6 +859,7 @@ if (uploadBtn) {
 // Initial Load
 loadFonts().then(() => {
     restoreState();
+    updateFontCapabilities(); // Ensure UI is correct after restore
 });
 
 

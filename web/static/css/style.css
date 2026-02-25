@@ -3,8 +3,8 @@
     --bg-sidebar: #252525;
     --text-primary: #e0e0e0;
     --text-secondary: #a0a0a0;
-    --accent-color: #0099ff;
-    --accent-hover: #007acc;
+    --accent-color: #22c55e;
+    --accent-hover: #16a34a;
     --border-color: #333;
 }
 
@@ -61,56 +61,97 @@ body {
     margin-bottom: 15px;
 }
 
-.control-group {
-    margin-bottom: 15px;
-}
-
-label {
-    display: block;
-    font-size: 13px;
-    margin-bottom: 5px;
-    color: var(--text-primary);
-}
-
-input[type="text"],
-input[type="number"],
-select,
-.input-text {
-    width: 100%;
-    padding: 12px;
-    /* Increased padding for better feel */
+.modern-input-wrapper {
+    position: relative;
+    margin-bottom: 12px;
     background-color: #333;
     border: 1px solid #444;
     border-radius: 6px;
-    /* Softer corners */
-    color: white;
-    font-size: 14px;
-    transition: all 0.2s ease;
+    padding: 8px 12px;
+    transition: border-color 0.2s;
 }
 
-.input-text:hover,
-input[type="number"]:hover,
-select:hover {
-    background-color: #383838;
-}
-
-input:focus,
-select:focus {
-    outline: none;
+.modern-input-wrapper:focus-within {
     border-color: var(--accent-color);
 }
 
+.modern-input-wrapper label {
+    display: block;
+    font-size: 11px;
+    color: var(--text-secondary);
+    margin-bottom: 2px;
+    text-transform: uppercase;
+    font-weight: 600;
+}
+
+.modern-input-wrapper input[type="text"],
+.modern-input-wrapper input[type="number"],
+.modern-input-wrapper input[type="color"],
+.modern-input-wrapper select {
+    width: 100%;
+    background: transparent;
+    border: none;
+    color: white;
+    font-size: 14px;
+    padding: 0;
+    outline: none;
+}
+
+.modern-input-wrapper select {
+    cursor: pointer;
+}
+
+.modern-input-wrapper input[type="color"] {
+    height: 30px;
+    cursor: pointer;
+}
+
+/* Accordion Grouping (MakerWorld Style) */
 details {
-    background: #333;
-    padding: 10px;
-    border-radius: 4px;
-    margin-bottom: 15px;
+    background: #252525;
+    border: 1px solid #333;
+    border-radius: 6px;
+    margin-bottom: 10px;
+    overflow: hidden;
 }
 
 summary {
+    padding: 12px 15px;
     cursor: pointer;
-    font-weight: bold;
     font-size: 13px;
+    font-weight: 600;
+    color: #e0e0e0;
+    display: flex;
+    align-items: center;
+    user-select: none;
+    background: #2a2a2a;
+    list-style: none;
+    margin: 0;
+}
+
+summary::-webkit-details-marker {
+    display: none;
+}
+
+.accordion-icon {
+    display: inline-block;
+    margin-right: 10px;
+    font-size: 10px;
+    color: #888;
+    transition: transform 0.2s ease;
+}
+
+details[open] summary {
+    border-bottom: 1px solid #333;
+    background: #333;
+}
+
+details .modern-input-wrapper {
+    margin: 15px;
+}
+
+details .modern-input-wrapper:last-child {
+    margin-bottom: 15px;
 }
 
 .sub-controls {
@@ -176,19 +217,21 @@ summary {
 }
 
 #preview-2d-container {
-    height: 30%;
-    /* Take top 30% */
+    height: 25%;
+    min-height: 180px;
+    flex-shrink: 0;
     width: 100%;
     position: relative;
     /* For absolute label */
     background-color: #1a1a1a;
-    border-bottom: 1px solid #333;
+    border-bottom: 3px solid #333;
     display: flex;
     justify-content: center;
     align-items: center;
     overflow: hidden;
     background-image: linear-gradient(#222 1px, transparent 1px), linear-gradient(90deg, #222 1px, transparent 1px);
     background-size: 20px 20px;
+    z-index: 5;
 }
 
 .preview-label {
@@ -220,7 +263,9 @@ summary {
 #viewer {
     width: 100%;
     flex: 1;
-    /* Take remaining space */
+    min-height: 0;
+    /* Ensures WebGL canvas doesn't force parent flex to expand */
+    position: relative;
 }
 
 .loading-overlay {
@@ -255,4 +300,41 @@ summary {
     100% {
         transform: rotate(360deg);
     }
+}
+
+/* Loading Box & Progress Bar */
+.loading-box {
+    background: #252525;
+    padding: 25px 40px;
+    border-radius: 8px;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
+    text-align: center;
+    border: 1px solid #333;
+    min-width: 320px;
+}
+
+#loading-text {
+    margin-bottom: 15px;
+    font-size: 14px;
+    font-weight: 500;
+    color: #e0e0e0;
+}
+
+.progress-bar-container {
+    width: 100%;
+    height: 12px;
+    background-color: #111;
+    border-radius: 6px;
+    overflow: hidden;
+    position: relative;
+    border: 1px solid #444;
+}
+
+.progress-bar-fill {
+    height: 100%;
+    width: 0%;
+    background-color: var(--accent-color);
+    border-radius: 6px;
+    transition: width 0.3s ease-out;
+    box-shadow: 0 0 10px rgba(0, 153, 255, 0.6);
 }

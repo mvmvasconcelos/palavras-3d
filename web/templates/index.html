@@ -13,6 +13,7 @@
     <!-- Three.js for 3D Viewer -->
     <script src="https://cdn.jsdelivr.net/npm/three@0.137.0/build/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.137.0/examples/js/loaders/STLLoader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.137.0/examples/js/exporters/3MFExporter.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.137.0/examples/js/controls/OrbitControls.js"></script>
 </head>
 
@@ -57,7 +58,6 @@
                 </div>
 
                 <div class="control-group">
-                    <label>Fonte</label>
                     <label>Fonte</label>
                     <div style="display: flex; gap: 5px; margin-bottom: 5px;">
                         <select id="font_family" style="flex-grow: 1;">
@@ -164,7 +164,10 @@
                     <a id="downloadBtn" class="secondary-btn" style="display:none" download>Download STL</a>
                     <a id="downloadZipBtn" class="secondary-btn"
                         style="display:none; background-color: #e67e22; color: #ffffff !important; margin-top: 5px; text-decoration: none;"
-                        download>Download ZIP (Multi-color)</a>
+                        download>Download ZIP (STL-Parts)</a>
+                    <a id="download3mfBtn" class="secondary-btn"
+                        style="display:none; background-color: #27ae60; color: #ffffff !important; margin-top: 5px; text-decoration: none; cursor: pointer;">Download
+                        3MF (Bambu/Prusa)</a>
 
                     <div id="download-help"
                         style="display:none; margin-top: 15px; font-size: 0.75em; color: #ccc; line-height: 1.4; border-top: 1px solid #444; padding-top: 10px;">
