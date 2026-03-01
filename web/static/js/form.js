@@ -128,6 +128,16 @@ function buildUI(config) {
             inputElement.type = 'color';
             inputElement.value = param.default || '#000000';
         }
+        else if (param.type === 'checkbox') {
+            inputElement = document.createElement('input');
+            inputElement.type = 'checkbox';
+            inputElement.style.width = 'auto';
+            inputElement.style.height = 'auto';
+            inputElement.style.marginTop = '10px';
+            inputElement.style.transform = 'scale(1.3)';
+            inputElement.style.cursor = 'pointer';
+            inputElement.checked = !!param.default;
+        }
         else if (param.type === 'font_select') {
             inputElement = document.createElement('select');
             inputElement.dataset.isFont = "true";

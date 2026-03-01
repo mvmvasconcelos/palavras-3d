@@ -165,5 +165,9 @@ def api_model_generate(model_id):
 def teste_furos():
     return render_template('teste-furos.html')
 
+@app.route('/ferramentas/conversor-svg')
+def conversor_svg():
+    return render_template('conversor-svg.html')
+
 if __name__ == '__main__':
     app.run(debug=True, port=5000)

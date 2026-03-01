@@ -1,0 +1,87 @@
+{
+    "id": "cookie_cutter",
+    "name": "Cortador de Biscoito",
+    "description": "Crie o seu próprio cortador de biscoito genérico com as medidas padrão.",
+    "thumbnail": "/static/img/cookie_cutter_thumb.png",
+    "features": [],
+    "parameters": [
+        {
+            "id": "shape_type",
+            "label": "Formato do Cortador",
+            "type": "select",
+            "options": [
+                {
+                    "value": "circle",
+                    "label": "Círculo (Padrão)"
+                },
+                {
+                    "value": "square",
+                    "label": "Quadrado"
+                },
+                {
+                    "value": "hexagon",
+                    "label": "Hexágono"
+                }
+            ],
+            "default": "circle"
+        },
+        {
+            "id": "inner_size",
+            "label": "Tamanho Interno (mm)",
+            "type": "number",
+            "min": 10,
+            "max": 200,
+            "step": 1,
+            "default": 50
+        }
+    ],
+    "categories": [
+        {
+            "name": "Opções de Corte",
+            "parameters": [
+                {
+                    "id": "wall_thickness",
+                    "label": "Espessura da Parede (mm)",
+                    "type": "number",
+                    "min": 0.4,
+                    "max": 10.0,
+                    "step": 0.1,
+                    "default": 2.6
+                },
+                {
+                    "id": "height",
+                    "label": "Altura do Cortador (mm)",
+                    "type": "number",
+                    "min": 5,
+                    "max": 50,
+                    "step": 1,
+                    "default": 16
+                },
+                {
+                    "id": "brim_width",
+                    "label": "Largura da Base/Brim (mm)",
+                    "type": "number",
+                    "min": 0,
+                    "max": 20,
+                    "step": 1,
+                    "default": 3
+                },
+                {
+                    "id": "brim_height",
+                    "label": "Altura da Base/Brim (mm)",
+                    "type": "number",
+                    "min": 0,
+                    "max": 10,
+                    "step": 0.5,
+                    "default": 3
+                },
+                {
+                    "id": "sharp_edge",
+                    "label": "Borda Afiada (Chanfro)",
+                    "type": "checkbox",
+                    "default": true
+                }
+            ]
+        }
+    ]
+}

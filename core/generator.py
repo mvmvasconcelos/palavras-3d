@@ -109,13 +109,9 @@ include <{scad_file_escaped}>;
             # Injetamos o `part` nativamente no arquivo para escapar o Windows stripping quotes
             content_with_part = temp_scad_content + f'\npart = "{part}";'
             
-            # Precisamos obrigatoriamente invocar o módulo principal para que o SCAD gere algo.
-            # No name_topper, a função principal é igual ao ID do modelo (baseado no SCAD original).
-            # Vamos usar uma abordagem genérica caso o `generate_model` não conheça a função principal,
-            # Ele executa genericamente `name_topper();` ou `render_model()`.
-            # AQUI é o segredo do Z-Fighting: No legacy, o scad já possuía a chamada comentada. 
-            # Injetaremos ela aqui e O arquivo temp terá a chamada:
-            content_with_part += "\nname_topper();\n"
+            # Injetamos a chamada principal usando o nome da pasta do modelo
+            model_module = os.path.basename(os.path.dirname(scad_file_path))
+            content_with_part += f"\n{model_module}();\n"
             
             with open(temp_scad_path, 'w', encoding='utf-8') as f:
                 f.write(content_with_part)
