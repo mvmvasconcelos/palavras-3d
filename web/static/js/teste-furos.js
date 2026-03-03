@@ -72,21 +72,21 @@ function loadSTL(url) {
         currentMesh = new THREE.Mesh(geometry, material);
         // Rotate -90 degrees in X to lay flat, as OpenSCAD Z is up
         currentMesh.rotation.x = -Math.PI / 2;
-        
+
         scene.add(currentMesh);
-        
+
         // Center camera and adjust height
         currentMesh.updateMatrixWorld();
         const box = new THREE.Box3().setFromObject(currentMesh);
         const center = box.getCenter(new THREE.Vector3());
-        
+
         // Push object up so min Y is 0
         currentMesh.position.y -= box.min.y;
-        
+
         const size = box.getSize(new THREE.Vector3());
         const maxSize = Math.max(size.x, size.y, size.z);
         const distance = maxSize * 2.5;
-        
+
         camera.position.set(0, distance * 0.8, distance);
         controls.target.set(center.x, center.y, center.z);
         camera.lookAt(center);
@@ -106,20 +106,20 @@ let holeCount = 0;
 function addHoleInput(value = 5.0) {
     holeCount++;
     const id = `hole_${holeCount}`;
-    
+
     const div = document.createElement('div');
     div.style.display = 'flex';
     div.style.gap = '5px';
     div.style.marginBottom = '5px';
     div.id = `container_${id}`;
-    
+
     const input = document.createElement('input');
     input.type = 'number';
     input.step = '0.1';
     input.value = value;
     input.id = id;
     input.style.flexGrow = '1';
-    
+
     const removeBtn = document.createElement('button');
     removeBtn.textContent = '❌';
     removeBtn.className = 'secondary-btn';
@@ -128,7 +128,7 @@ function addHoleInput(value = 5.0) {
     removeBtn.onclick = () => {
         div.remove();
     };
-    
+
     div.appendChild(input);
     div.appendChild(removeBtn);
     holesContainer.appendChild(div);
@@ -139,9 +139,12 @@ addHoleBtn.addEventListener('click', () => {
 });
 
 // Add default calibration holes
-addHoleInput(4.8);
 addHoleInput(5.0);
 addHoleInput(5.2);
+addHoleInput(6.0);
+addHoleInput(6.2);
+addHoleInput(7.0);
+addHoleInput(7.2);
 
 generateBtn.addEventListener('click', () => {
     loading.style.display = 'flex';
@@ -163,23 +166,23 @@ generateBtn.addEventListener('click', () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
     })
-    .then(res => res.json())
-    .then(data => {
-        loading.style.display = 'none';
-        if (data.success) {
-            clearMesh();
-            loadSTL(data.url);
-            
-            downloadBtn.href = data.url;
-            downloadBtn.style.display = 'block';
-        } else {
-            alert('Erro ao gerar: ' + data.error);
-        }
-    })
-    .catch(err => {
-        loading.style.display = 'none';
-        alert('Erro de conexão: ' + err);
-    });
+        .then(res => res.json())
+        .then(data => {
+            loading.style.display = 'none';
+            if (data.success) {
+                clearMesh();
+                loadSTL(data.url);
+
+                downloadBtn.href = data.url;
+                downloadBtn.style.display = 'block';
+            } else {
+                alert('Erro ao gerar: ' + data.error);
+            }
+        })
+        .catch(err => {
+            loading.style.display = 'none';
+            alert('Erro de conexão: ' + err);
+        });
 });
 
 initViewer();

@@ -116,8 +116,8 @@ def api_model_generate(model_id):
     # BUT, to keep the blind injection simple and working out of the box with the legacy SCAD file:
     # If the SCAD file expects `text_lines = ["Vinicius", ""];` we must build it here if the UI sends text_line_1.
     # A cleaner approach is handling this logic inside the Form builder or here.
-    # Handle legacy name_topper specific parameters (Text lines processing)
-    if model_id == "name_topper":
+    # Handle name_topper and new enfeite_lapis_fundo specific parameters (Text lines processing)
+    if model_id in ["name_topper", "enfeite_lapis_fundo"]:
         line1 = data.pop('text_line_1', '')
         line2 = data.pop('text_line_2', '')
         size1 = float(data.pop('text_size_1', 12))
@@ -134,6 +134,26 @@ def api_model_generate(model_id):
             
         data['text_lines'] = '[' + ', '.join([f'"{l}"' for l in lines]) + ']'
         data['text_sizes'] = '[' + ', '.join([str(s) for s in sizes]) + ']'
+        
+        # Format bottom text specifically for "enfeite_lapis_fundo"
+        if model_id == "enfeite_lapis_fundo":
+            b_line1 = data.pop('bottom_text', '')
+            b_line2 = data.pop('bottom_text_2', '')
+            b_size1 = float(data.pop('bottom_text_size', 10))
+            b_size2 = float(data.pop('bottom_text_size_2', 10))
+            
+            b_lines = []
+            b_sizes = []
+            if b_line1:
+                b_lines.append(b_line1)
+                b_sizes.append(b_size1)
+            if b_line2:
+                b_lines.append(b_line2)
+                b_sizes.append(b_size2)
+                
+            data['bottom_text_lines'] = '[' + ', '.join([f'"{l}"' for l in b_lines]) + ']'
+            data['bottom_text_sizes'] = '[' + ', '.join([str(s) for s in b_sizes]) + ']'
+
         
         parts_to_render = ["base", "letters", "all"]
     else:
@@ -161,6 +181,26 @@ def api_model_generate(model_id):
         return jsonify(result), 500
 
 # Legacy route for testing
+@app.route('/api/generate_test_holes', methods=['POST'])
+def api_generate_test_holes():
+    data = request.json
+    
+    # Format holes array as SCAD string
+    holes = data.get('holes', [])
+    data['holes'] = "[" + ", ".join([str(h) for h in holes]) + "]"
+    
+    scad_path = os.path.join(PROJECT_ROOT, "models", "test_holes", "model.scad")
+    
+    result = generate_model(scad_path, data, parts=["all"])
+    
+    if result["success"]:
+        return jsonify({
+            "success": True,
+            "url": result["files"].get("all")
+        })
+    else:
+        return jsonify(result), 500
+
 @app.route('/teste-furos')
 def teste_furos():
     return render_template('teste-furos.html')

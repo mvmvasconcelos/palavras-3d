@@ -141,6 +141,10 @@ function buildUI(config) {
         else if (param.type === 'font_select') {
             inputElement = document.createElement('select');
             inputElement.dataset.isFont = "true";
+            if (param.default) {
+                // If the default looks like "Chewy:style=Bold", just grab the family name "Chewy"
+                inputElement.dataset.defaultFont = param.default.split(':')[0];
+            }
 
             const fontWrapper = document.createElement('div');
             fontWrapper.style.display = 'flex';
@@ -272,6 +276,12 @@ async function loadFontsHandler(selectEl) {
         opt.dataset.hasBold = f.hasBold;
         opt.dataset.hasItalic = f.hasItalic;
         if (f.filename) opt.dataset.filename = f.filename;
+
+        // Select if matches default config
+        if (selectEl.dataset.defaultFont && (f.name === selectEl.dataset.defaultFont || `📂 ${f.name}` === selectEl.dataset.defaultFont)) {
+            opt.selected = true;
+        }
+
         selectEl.appendChild(opt);
     };
 

@@ -9,7 +9,7 @@ CORE_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(CORE_DIR)
 OUTPUT_DIR = os.path.join(PROJECT_ROOT, "web", "static", "generated")
 
-OPENSCAD_PATH = r"C:\Program Files\OpenSCAD\openscad.exe"
+OPENSCAD_PATH = r"C:\Users\IFSUL\Documents\dev\OpenSCAD-Nightly\OpenSCAD-2025.02.27-x86-64\openscad.exe"
 
 if not os.path.exists(OUTPUT_DIR):
     os.makedirs(OUTPUT_DIR)
@@ -116,7 +116,7 @@ include <{scad_file_escaped}>;
             with open(temp_scad_path, 'w', encoding='utf-8') as f:
                 f.write(content_with_part)
                 
-            cmd = [OPENSCAD_PATH, "-o", filepath, temp_scad_path]
+            cmd = [OPENSCAD_PATH, "--enable=manifold", "--enable=fast-csg", "-o", filepath, temp_scad_path]
             print(f"Generating part: {part} (Timeout 60s)")
             subprocess.run(cmd, check=True, capture_output=True, timeout=60)
             

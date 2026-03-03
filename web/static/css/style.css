@@ -101,6 +101,11 @@ body {
     cursor: pointer;
 }
 
+.modern-input-wrapper select option {
+    background-color: var(--bg-sidebar);
+    color: var(--text-primary);
+}
+
 .modern-input-wrapper input[type="color"] {
     height: 30px;
     cursor: pointer;
