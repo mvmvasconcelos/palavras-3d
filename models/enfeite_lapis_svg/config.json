@@ -1,0 +1,130 @@
+{
+    "id": "enfeite_lapis_svg",
+    "name": "Enfeite de lápis SVG",
+    "description": "Crie um enfeite de lápis personalizado a partir de uma imagem SVG.",
+    "thumbnail": "/static/img/enfeite_lapis_fundo_thumb.png",
+    "features": [],
+    "parameters": [
+        {
+            "id": "svg_file",
+            "label": "Arquivo SVG",
+            "type": "file",
+            "accept": ".svg"
+        },
+        {
+            "id": "svg_max_width",
+            "label": "Comprimento Máximo (mm)",
+            "type": "number",
+            "min": 10,
+            "max": 500,
+            "step": 1,
+            "default": 100
+        },
+        {
+            "id": "hole_length",
+            "type": "hidden",
+            "value": 500
+        }
+    ],
+    "categories": [
+        {
+            "name": "Cores",
+            "parameters": [
+                {
+                    "id": "base_color",
+                    "label": "Cor da Base",
+                    "type": "color",
+                    "default": "#1B40D1"
+                },
+                {
+                    "id": "letters_color",
+                    "label": "Cor do Relevo",
+                    "type": "color",
+                    "default": "#FFFFFF"
+                }
+            ]
+        },
+        {
+            "name": "Ajustes Finos",
+            "parameters": [
+                {
+                    "id": "letter_height",
+                    "label": "Altura do relevo (mm)",
+                    "type": "number",
+                    "min": 0.2,
+                    "max": 10.0,
+                    "step": 0.1,
+                    "default": 2.0
+                },
+                {
+                    "id": "base_height",
+                    "label": "Altura da base (mm)",
+                    "type": "number",
+                    "min": 1,
+                    "max": 50,
+                    "step": 1,
+                    "default": 8
+                },
+                {
+                    "id": "outline_margin",
+                    "label": "Margem do contorno (mm)",
+                    "type": "number",
+                    "min": 0,
+                    "max": 10,
+                    "step": 0.1,
+                    "default": 2.6
+                }
+            ]
+        },
+        {
+            "name": "Furação",
+            "parameters": [
+                {
+                    "id": "hole_orientation",
+                    "label": "Orientação do Furo",
+                    "type": "select",
+                    "options": [
+                        {
+                            "value": "TOPBOTTOM",
+                            "label": "Vertical (Chaveiro/Topper)"
+                        },
+                        {
+                            "value": "FRONTBACK",
+                            "label": "Horizontal (Passante)"
+                        },
+                        {
+                            "value": "NONE",
+                            "label": "Sem Furo"
+                        }
+                    ],
+                    "default": "FRONTBACK"
+                },
+                {
+                    "id": "hole_type",
+                    "label": "Formato do Furo",
+                    "type": "select",
+                    "options": [
+                        {
+                            "value": "CIRCLE",
+                            "label": "Círculo"
+                        },
+                        {
+                            "value": "HEXAGON",
+                            "label": "Hexágono"
+                        }
+                    ],
+                    "default": "CIRCLE"
+                },
+                {
+                    "id": "hole_diameter",
+                    "label": "Diâmetro do Furo (mm)",
+                    "type": "number",
+                    "min": 1,
+                    "max": 20,
+                    "step": 0.1,
+                    "default": 7.5
+                }
+            ]
+        }
+    ]
+}

@@ -117,8 +117,8 @@ include <{scad_file_escaped}>;
                 f.write(content_with_part)
                 
             cmd = [OPENSCAD_PATH, "--enable=manifold", "--enable=fast-csg", "-o", filepath, temp_scad_path]
-            print(f"Generating part: {part} (Timeout 60s)")
-            subprocess.run(cmd, check=True, capture_output=True, timeout=60)
+            print(f"Generating part: {part} (Timeout 300s)")
+            subprocess.run(cmd, check=True, capture_output=True, timeout=300)
             
             generated_files[part] = f"/static/generated/{filename}"
             

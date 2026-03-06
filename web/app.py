@@ -16,12 +16,16 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(BASE_DIR)
 OUTPUT_DIR = os.path.join(BASE_DIR, "static", "generated")
 FONTS_DIR = os.path.join(BASE_DIR, "static", "fonts")
+SVG_DIR = os.path.join(BASE_DIR, "static", "uploads", "svg")
 
 if not os.path.exists(OUTPUT_DIR):
     os.makedirs(OUTPUT_DIR)
 
 if not os.path.exists(FONTS_DIR):
     os.makedirs(FONTS_DIR)
+
+if not os.path.exists(SVG_DIR):
+    os.makedirs(SVG_DIR)
 
 def get_font_name(font_path):
     try:
@@ -70,6 +74,67 @@ def upload_font():
     
     return jsonify({"success": False, "error": "Invalid file type. Only TTF/OTF allowed."}), 400
 
+import re
+
+import re
+
+def sanitize_svg(filepath):
+    try:
+        with open(filepath, 'r', encoding='utf-8') as f:
+            content = f.read()
+            
+        # Strip embedded raster images (ImageTracer sometimes embeds the original PNG)
+        content = re.sub(r'<image[^>]*>', '', content)
+        
+        # Validate that there are actual vectors left
+        has_vectors = bool(re.search(r'<(path|polygon|rect|circle|ellipse|line|polyline)[^>]*>', content))
+        if not has_vectors:
+            raise ValueError("No vector geometry found. Ensure the SVG contains paths, not just an embedded PNG.")
+            
+        with open(filepath, 'w', encoding='utf-8') as f:
+            f.write(content)
+            
+    except ValueError as ve:
+        raise ve
+    except Exception as e:
+        import traceback
+        print("Error sanitizing SVG:", e)
+        traceback.print_exc()
+
+
+@app.route('/api/upload-svg', methods=['POST'])
+def upload_svg():
+    if 'svg_file' not in request.files:
+        return jsonify({"success": False, "error": "No file part"}), 400
+    
+    file = request.files['svg_file']
+    if file.filename == '':
+        return jsonify({"success": False, "error": "No selected file"}), 400
+    
+    if file and file.filename.lower().endswith('.svg'):
+        import time
+        safe_name = f"{int(time.time())}_{file.filename.replace(' ', '_')}"
+        path = os.path.join(SVG_DIR, safe_name)
+        file.save(path)
+
+        # Cleanup rasterized embedded images and validate vector content
+        try:
+            sanitize_svg(path)
+        except ValueError as ve:
+            # Delete the invalid file
+            os.remove(path)
+            # Retornamos em pt-br pois a view vai renderizar isso na interface
+            error_msg = "O arquivo SVG enviado não contém caminhos vetoriais! Ele parece ser apenas uma imagem Bitmap (PNG/JPG) solta dentro de um wrapper SVG. Por favor, utilize o Conversor-SVG da ferramenta ou as opções de 'Trace/Vectorizar' se utilizou o Illustrator."
+            return jsonify({"success": False, "error": error_msg}), 400
+            
+        return jsonify({
+            "success": True, 
+            "filename": safe_name, 
+            "url": f"/static/uploads/svg/{safe_name}"
+        })
+    
+    return jsonify({"success": False, "error": "Invalid file type. Only SVG allowed."}), 400
+
 # ==========================================
 # MULTI-MODEL ROUTES
 # ==========================================
@@ -116,8 +181,8 @@ def api_model_generate(model_id):
     # BUT, to keep the blind injection simple and working out of the box with the legacy SCAD file:
     # If the SCAD file expects `text_lines = ["Vinicius", ""];` we must build it here if the UI sends text_line_1.
     # A cleaner approach is handling this logic inside the Form builder or here.
-    # Handle name_topper and new enfeite_lapis_fundo specific parameters (Text lines processing)
-    if model_id in ["name_topper", "enfeite_lapis_fundo"]:
+    # Handle name_topper and new enfeite_lapis_fundo/svg specific parameters (Text lines processing)
+    if model_id in ["name_topper", "enfeite_lapis_fundo", "enfeite_lapis_svg"]:
         line1 = data.pop('text_line_1', '')
         line2 = data.pop('text_line_2', '')
         size1 = float(data.pop('text_size_1', 12))
@@ -164,6 +229,13 @@ def api_model_generate(model_id):
     if font_filename:
         font_full_path = os.path.join(FONTS_DIR, font_filename)
         font_include = font_full_path.replace('\\', '/')
+        
+    # Handle SVG files for our new model or generically
+    svg_filename = data.pop('svg_file', None)
+    if svg_filename:
+        # Use absolute paths because OpenSCAD is strict about document root imports
+        abs_svg_path = os.path.abspath(os.path.join(app.root_path, 'static', 'uploads', 'svg', svg_filename))
+        data['svg_path'] = abs_svg_path.replace('\\', '/')
         
     result = generate_model(scad_path, data, font_include=font_include, parts=parts_to_render)
     

@@ -174,7 +174,108 @@ function buildUI(config) {
             inputRegistry['font_italic'] = subControls.querySelector('#font_italic');
         }
 
-        if (inputElement && inputElement.parentNode !== group && !inputElement.parentNode?.classList?.contains('range-input') && param.type !== 'font_select') {
+        else if (param.type === 'file') {
+            const wrapper = document.createElement('div');
+            wrapper.className = 'file-input-wrapper';
+            wrapper.style.display = 'flex';
+            wrapper.style.flexDirection = 'column';
+            wrapper.style.gap = '5px';
+
+            inputElement = document.createElement('input');
+            inputElement.type = 'file';
+            if (param.accept) inputElement.accept = param.accept;
+            else inputElement.accept = '.svg';
+
+            const statusText = document.createElement('span');
+            statusText.style.fontSize = '12px';
+            statusText.style.color = 'var(--text-secondary)';
+            statusText.textContent = 'Nenhum arquivo selecionado';
+
+            const hiddenValue = document.createElement('input');
+            hiddenValue.type = 'hidden';
+            hiddenValue.id = param.id + '_filename';
+
+            const previewContainer = document.createElement('div');
+            previewContainer.style.marginTop = '10px';
+            previewContainer.style.width = '100%';
+            previewContainer.style.height = '140px';
+            previewContainer.style.border = '1px dashed #555';
+            previewContainer.style.borderRadius = '6px';
+            previewContainer.style.display = 'none';
+            previewContainer.style.alignItems = 'center';
+            previewContainer.style.justifyContent = 'center';
+            previewContainer.style.overflow = 'hidden';
+
+            // Checkerboard pattern to see white SVGs clearly
+            previewContainer.style.backgroundColor = '#1a1a1a';
+            previewContainer.style.backgroundImage = 'linear-gradient(45deg, #2a2a2a 25%, transparent 25%, transparent 75%, #2a2a2a 75%, #2a2a2a), linear-gradient(45deg, #2a2a2a 25%, transparent 25%, transparent 75%, #2a2a2a 75%, #2a2a2a)';
+            previewContainer.style.backgroundSize = '20px 20px';
+            previewContainer.style.backgroundPosition = '0 0, 10px 10px';
+
+            const previewImg = document.createElement('img');
+            previewImg.style.maxWidth = '90%';
+            previewImg.style.maxHeight = '90%';
+            previewImg.style.objectFit = 'contain';
+            previewContainer.appendChild(previewImg);
+
+            inputElement.addEventListener('change', async (e) => {
+                const file = e.target.files[0];
+                if (!file) {
+                    hiddenValue.value = "";
+                    statusText.textContent = 'Nenhum arquivo selecionado';
+                    statusText.style.color = 'var(--text-secondary)';
+                    previewContainer.style.display = 'none';
+                    triggerUpdates();
+                    return;
+                }
+
+                statusText.textContent = 'Fazendo upload...';
+                statusText.style.color = 'var(--primary-color)';
+                previewContainer.style.display = 'none';
+
+                const formData = new FormData();
+                formData.append('svg_file', file);
+
+                try {
+                    const res = await fetch('/api/upload-svg', {
+                        method: 'POST',
+                        body: formData
+                    });
+                    const data = await res.json();
+
+                    if (data.success) {
+                        statusText.textContent = 'Upload concluído! (' + file.name + ')';
+                        statusText.style.color = 'var(--success-color, green)';
+                        hiddenValue.value = data.filename;
+
+                        previewImg.src = data.url + '?t=' + new Date().getTime();
+                        previewContainer.style.display = 'flex';
+
+                        triggerUpdates();
+                    } else {
+                        statusText.textContent = 'Erro: ' + data.error;
+                        statusText.style.color = 'var(--error-color, red)';
+                        hiddenValue.value = ""; // Clear so it doesn't send broken file payload
+                        triggerUpdates();
+                    }
+                } catch (err) {
+                    statusText.textContent = 'Erro no upload';
+                    hiddenValue.value = "";
+                    triggerUpdates();
+                    statusText.style.color = 'var(--error-color, red)';
+                }
+            });
+
+            wrapper.appendChild(inputElement);
+            wrapper.appendChild(statusText);
+            wrapper.appendChild(previewContainer);
+            wrapper.appendChild(hiddenValue);
+            group.appendChild(wrapper);
+
+            inputElement.dataset.isHiddenValue = hiddenValue.id;
+        }
+
+        if (inputElement && inputElement.parentNode !== group && !inputElement.parentNode?.classList?.contains('range-input') && param.type !== 'font_select' && param.type !== 'file') {
             group.appendChild(inputElement);
         }
 
@@ -224,8 +325,16 @@ window.getFormData = function () {
         } else if (el.type === 'number' || el.type === 'range') {
             data[key] = parseFloat(el.value);
         } else {
-            // If it's font select, we also need to pass its attributes
-            data[key] = el.value;
+            // If it's a file input, pass the uploaded filename safely
+            if (el.type === 'file') {
+                const hiddenId = el.dataset.isHiddenValue;
+                const hiddenEl = document.getElementById(hiddenId);
+                if (hiddenEl && hiddenEl.value) {
+                    data[key] = hiddenEl.value;
+                }
+            } else {
+                data[key] = el.value;
+            }
 
             if (el.tagName === 'SELECT' && el.dataset.isFont === "true") {
                 const opt = el.options[el.selectedIndex];

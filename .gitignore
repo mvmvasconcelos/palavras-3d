@@ -5,6 +5,7 @@ __pycache__/
 
 # Generated content
 web/static/generated/
+web/static/uploads/
 *.stl
 *.scad
 !name_topper.scad
