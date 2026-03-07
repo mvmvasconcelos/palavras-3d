@@ -4,6 +4,7 @@ import subprocess
 import zipfile
 import hashlib
 import json
+import trimesh
 
 CORE_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(CORE_DIR)
@@ -53,13 +54,22 @@ def generate_model(scad_file_path, params_dict, font_include=None, parts=["all"]
         generated_files[part] = f"/static/generated/{filename}"
         if not os.path.exists(filepath):
             all_exist = False
-
+            
     if "base" in parts and "letters" in parts:
         zip_filename = f"multicolor_{model_hash}.zip"
         zip_path = os.path.join(OUTPUT_DIR, zip_filename)
         generated_files["zip"] = f"/static/generated/{zip_filename}"
         if not os.path.exists(zip_path):
             all_exist = False
+            
+        mf_filename = f"multicolor_{model_hash}.3mf"
+        mf_path = os.path.join(OUTPUT_DIR, mf_filename)
+        generated_files["3mf"] = f"/static/generated/{mf_filename}"
+        if not os.path.exists(mf_path):
+            all_exist = False
+            
+        if part == "all":
+            pass # Skipping OpenSCAD native 3MF check, we will build it manually using Trimesh if base and letters exist
             
     if all_exist:
         print(f"Cache Hit! Retornando modelos locais pré-existentes para hash {model_hash}")
@@ -122,6 +132,9 @@ include <{scad_file_escaped}>;
             
             generated_files[part] = f"/static/generated/{filename}"
             
+            if part == "all":
+                pass # Extracted OpenSCAD full export, we want discrete parts instead
+            
         if "base" in generated_files and "letters" in generated_files:
             zip_filename = f"multicolor_{model_hash}.zip"
             zip_path = os.path.join(OUTPUT_DIR, zip_filename)
@@ -129,6 +142,28 @@ include <{scad_file_escaped}>;
                 zipf.write(os.path.join(OUTPUT_DIR, f"base_{model_hash}.stl"), arcname="base.stl")
                 zipf.write(os.path.join(OUTPUT_DIR, f"letters_{model_hash}.stl"), arcname="text.stl")
             generated_files["zip"] = f"/static/generated/{zip_filename}"
+            
+            # --- Generate proper Multi-Object 3MF ---
+            try:
+                base_mesh = trimesh.load(os.path.join(OUTPUT_DIR, f"base_{model_hash}.stl"))
+                text_mesh = trimesh.load(os.path.join(OUTPUT_DIR, f"letters_{model_hash}.stl"))
+                
+                # Naming meshes for the slicing tree
+                base_mesh.metadata['name'] = "Base"
+                text_mesh.metadata['name'] = "Text"
+                
+                # Give a different generic color purely to split objects visually internally
+                base_mesh.visual.face_colors = [100, 100, 255, 255]
+                text_mesh.visual.face_colors = [255, 100, 100, 255]
+
+                scene = trimesh.Scene([base_mesh, text_mesh])
+                
+                mf_filename = f"multicolor_{model_hash}.3mf"
+                mf_filepath = os.path.join(OUTPUT_DIR, mf_filename)
+                
+                scene.export(mf_filepath, file_type='3mf')
+                generated_files["3mf"] = f"/static/generated/{mf_filename}"
+            except Exception as e: print(f"Error packing 3MF via trimesh: {repr(e)}")
             
         return {"success": True, "files": generated_files}
         
@@ -141,3 +176,4 @@ include <{scad_file_escaped}>;
     finally:
         if os.path.exists(temp_scad_path):
             os.remove(temp_scad_path)
+

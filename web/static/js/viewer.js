@@ -170,9 +170,17 @@ function triggerGeneration() {
                 if (response.zip_url) {
                     downloadZipBtn.href = response.zip_url;
                     downloadZipBtn.style.display = 'block';
-                    if (download3mfBtn) download3mfBtn.style.display = 'block';
                 } else {
                     downloadZipBtn.style.display = 'none';
+                }
+
+                if (response['3mf_url']) {
+                    if (download3mfBtn) {
+                        download3mfBtn.href = response['3mf_url'];
+                        download3mfBtn.style.display = 'block';
+                        download3mfBtn.download = `${window.CURRENT_MODEL_ID}-multicolor.3mf`;
+                    }
+                } else {
                     if (download3mfBtn) download3mfBtn.style.display = 'none';
                 }
             });
@@ -315,47 +323,11 @@ function drawRuler(startX, width, zPos) {
     currentRuler = group;
 }
 
-// ----------------------------------------------------
-// EXPORT 3MF
-// ----------------------------------------------------
-function export3MF() {
-    if (meshes.length === 0) return;
-    try {
-        const exporter = new THREE['3MFExporter']();
-
-        const group = new THREE.Group();
-        meshes.forEach(mesh => {
-            const clone = mesh.clone();
-            clone.material = mesh.material.clone();
-            clone.name = (group.children.length === 0) ? "Base" : "Part_" + group.children.length;
-            group.add(clone);
-        });
-
-        scene.add(group);
-        const arrayBuffer = exporter.parse(group);
-        scene.remove(group);
-
-        const blob = new Blob([arrayBuffer], { type: 'application/vnd.ms-pki.securable-3mf' });
-        const link = document.createElement('a');
-        link.style.display = 'none';
-        link.href = URL.createObjectURL(blob);
-        link.download = `${window.CURRENT_MODEL_ID}-multicolor.3mf`;
-
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-    } catch (err) {
-        console.error("Erro exportando 3MF:", err);
-        alert("Erro ao exportar 3MF: " + err);
-    }
-}
+// Removed broken client-side 3MF export, now using backend OpenSCAD 3MF urls
 
 // Global hooks
 document.addEventListener("DOMContentLoaded", () => {
     initViewer();
     const btnGen = document.getElementById('generateBtn');
     if (btnGen) btnGen.addEventListener('click', triggerGeneration);
-
-    const btn3mf = document.getElementById('download3mfBtn');
-    if (btn3mf) btn3mf.addEventListener('click', export3MF);
 });

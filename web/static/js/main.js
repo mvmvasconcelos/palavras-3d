@@ -234,9 +234,17 @@ function triggerGeneration() {
                 if (data.zip_url) {
                     downloadZipBtn.href = data.zip_url;
                     downloadZipBtn.style.display = 'block';
-                    if (download3mfBtn) download3mfBtn.style.display = 'block';
                 } else {
                     downloadZipBtn.style.display = 'none';
+                }
+
+                if (data['3mf_url']) {
+                    if (download3mfBtn) {
+                        download3mfBtn.href = data['3mf_url'];
+                        download3mfBtn.style.display = 'block';
+                        download3mfBtn.download = `palavras-3d-multicolor.3mf`;
+                    }
+                } else {
                     if (download3mfBtn) download3mfBtn.style.display = 'none';
                 }
 
@@ -608,48 +616,7 @@ document.getElementById('generateBtn').addEventListener('click', () => {
     triggerGeneration();
 });
 
-// 3MF Export functionality
-function export3MF() {
-    if (meshes.length === 0) return;
-    try {
-        const exporter = new THREE['3MFExporter']();
-
-        // Group meshes
-        const group = new THREE.Group();
-        meshes.forEach(mesh => {
-            const clone = mesh.clone();
-            clone.material = mesh.material.clone();
-
-            // Name the mesh to be readable in slicers
-            clone.name = (group.children.length === 0) ? "Base" : "Text";
-            group.add(clone);
-        });
-
-        // Add to scene to calculate correct positions from world
-        scene.add(group);
-        const arrayBuffer = exporter.parse(group);
-        scene.remove(group); // remove immediately after parsing
-
-        const blob = new Blob([arrayBuffer], { type: 'application/vnd.ms-pki.securable-3mf' });
-
-        const link = document.createElement('a');
-        link.style.display = 'none';
-        link.href = URL.createObjectURL(blob);
-        link.download = 'palavras-3d-multicolor.3mf';
-
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-    } catch (err) {
-        console.error("Erro exportando 3MF:", err);
-        alert("Erro ao exportar 3MF: " + err);
-    }
-}
-
-const download3mfBtn = document.getElementById('download3mfBtn');
-if (download3mfBtn) {
-    download3mfBtn.addEventListener('click', export3MF);
-}
+// Removed broken JS 3mf export
 
 // Initialize 3D Viewer on load
 // Initialize 3D Viewer on load

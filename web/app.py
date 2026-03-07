@@ -221,6 +221,8 @@ def api_model_generate(model_id):
 
         
         parts_to_render = ["base", "letters", "all"]
+    elif model_id == "chaveiro_imagem":
+        parts_to_render = ["base", "letters", "all"]
     else:
         # Default blind rendering
         parts_to_render = ["all"]
@@ -247,7 +249,8 @@ def api_model_generate(model_id):
             "base_url": files.get("base"),
             "text_url": files.get("letters"),
             "full_url": files.get("all"),
-            "zip_url": files.get("zip")
+            "zip_url": files.get("zip"),
+            "3mf_url": files.get("3mf")
         })
     else:
         return jsonify(result), 500
