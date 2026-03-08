@@ -1,0 +1,601 @@
+import React, { useState, useRef } from 'react';
+import Viewer3D from './Viewer3D';
+import { Upload, Sliders, Scissors, Home, ChevronRight } from 'lucide-react';
+import { processSvgFile } from './svgProcessor';
+import axios from 'axios';
+import { BrowserRouter, Routes, Route, Link } from 'react-router-dom';
+
+function SvgPreviewModal({
+    isOpen,
+    onClose,
+    onConfirm,
+    onLoadAnother,
+    svgText,
+    initialThickness
+}: {
+    isOpen: boolean;
+    onClose: () => void;
+    onConfirm: (processed: any, thickness: number) => void;
+    onLoadAnother: () => void;
+    svgText: string | null;
+    initialThickness: number;
+}) {
+    const [thickness, setThickness] = useState(initialThickness);
+    const [preview, setPreview] = useState<any>(null);
+    const [isProcessing, setIsProcessing] = useState(false);
+    const [preserveFill, setPreserveFill] = useState(true);
+
+    React.useEffect(() => {
+        if (!isOpen || !svgText) return;
+        let isActive = true;
+        const process = async () => {
+            setIsProcessing(true);
+            try {
+                const res = await processSvgFile(svgText, thickness, 3.0, preserveFill);
+                if (isActive) setPreview(res);
+            } catch (err) {
+                console.error(err);
+            } finally {
+                if (isActive) setIsProcessing(false);
+            }
+        };
+        const timeoutId = setTimeout(process, 100);
+        return () => { isActive = false; clearTimeout(timeoutId); };
+    }, [svgText, thickness, isOpen, preserveFill]);
+
+    if (!isOpen) return null;
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+            <div className="bg-neutral-900 border border-neutral-700 rounded-xl shadow-2xl w-full max-w-4xl flex flex-col overflow-hidden animate-in fade-in zoom-in duration-200">
+                <div className="flex justify-between items-center p-4 border-b border-neutral-800 bg-neutral-950">
+                    <h2 className="text-lg font-bold text-neutral-200 tracking-wider">PRÉ-VISUALIZAÇÃO SVG</h2>
+                    <button onClick={onClose} className="text-neutral-500 hover:text-white transition-colors">
+                        <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                    </button>
+                </div>
+
+                <div className="p-6 space-y-4 flex-1 overflow-y-auto">
+                    <div className="flex items-center gap-6 flex-wrap">
+                        <div className="flex-1 space-y-2 min-w-48">
+                            <label className="flex justify-between text-sm font-medium text-neutral-400">
+                                <span>Engrossar Linhas: <span className="text-emerald-400">{thickness.toFixed(1)}px</span></span>
+                            </label>
+                            <input type="range" min="0" max="5" step="0.1" value={thickness} onChange={e => setThickness(parseFloat(e.target.value))} className="w-full accent-emerald-500" />
+                        </div>
+                        <button
+                            onClick={() => setPreserveFill(p => !p)}
+                            className={`flex items-center gap-2 px-4 py-2 rounded-lg border text-sm font-medium transition-all ${preserveFill
+                                ? 'bg-emerald-600 border-emerald-500 text-white shadow-lg shadow-emerald-900/40'
+                                : 'bg-neutral-800 border-neutral-700 text-neutral-400 hover:border-neutral-500'
+                                }`}
+                        >
+                            <span className={`w-3 h-3 rounded-full border-2 transition-colors ${preserveFill ? 'bg-white border-white' : 'border-neutral-500'}`} />
+                            Manter Preenchimento
+                        </button>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-6">
+                        <div className="space-y-3">
+                            <h3 className="text-center text-sm font-semibold text-neutral-400">SVG Original</h3>
+                            <div className="rounded-lg p-2 h-56 flex items-center justify-center overflow-hidden" style={{ backgroundColor: '#f0ebe3' }}>
+                                {preview ? <div dangerouslySetInnerHTML={{ __html: preview.originalSvg }} className="w-full h-full [&>svg]:max-w-full [&>svg]:max-h-full [&>svg]:object-contain" /> : <span className="text-neutral-600 animate-pulse">Processando...</span>}
+                            </div>
+                        </div>
+                        <div className="space-y-3 relative">
+                            <div className="absolute top-1/2 -left-3 -translate-y-1/2 w-6 h-6 bg-neutral-800 rounded-full flex items-center justify-center text-neutral-400 z-10 border border-neutral-700">
+                                →
+                            </div>
+                            <h3 className="text-center text-sm font-semibold text-neutral-400">SVG Engrossado</h3>
+                            <div className="rounded-lg p-2 h-56 flex items-center justify-center overflow-hidden" style={{ backgroundColor: '#f0ebe3' }}>
+                                {preview ? <div dangerouslySetInnerHTML={{ __html: preview.thickenedSvg }} className="w-full h-full [&>svg]:max-w-full [&>svg]:max-h-full [&>svg]:object-contain" /> : <span className="text-neutral-600 animate-pulse">Processando...</span>}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div className="p-4 border-t border-neutral-800 bg-neutral-950 flex justify-between items-center gap-3">
+                    <button
+                        onClick={onLoadAnother}
+                        className="flex items-center gap-2 px-4 py-2 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-400 hover:text-neutral-200 text-sm font-medium transition-colors border border-neutral-700"
+                    >
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
+                        Carregar outro arquivo
+                    </button>
+                    <div className="flex gap-3">
+                        <button onClick={onClose} className="px-5 py-2 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-300 font-medium transition-colors">
+                            Cancelar
+                        </button>
+                        <button
+                            onClick={() => onConfirm(preview, thickness)}
+                            disabled={isProcessing || !preview}
+                            className="px-5 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-medium shadow-lg shadow-emerald-900/50 transition-colors disabled:opacity-50"
+                        >
+                            Confirmar e Enviar
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+function Generator() {
+    const [isGenerating, setIsGenerating] = useState(false);
+    const [carimbBaseUrl, setCarimbBaseUrl] = useState<string | null>(null);
+    const [carimbArteUrl, setCarimbArteUrl] = useState<string | null>(null);
+    const [cortadorUrl, setCortadorUrl] = useState<string | null>(null);
+
+    // Viewer colors
+    const [artColor, setArtColor] = useState('#f5f0e8');    // raised art (bone white)
+    const [modelColor, setModelColor] = useState('#34d399'); // base + cutter (emerald)
+
+    const [svgFile, setSvgFile] = useState<File | null>(null);
+    const [svgText, setSvgText] = useState<string | null>(null);
+    const [thickness, setThickness] = useState(0.5);
+    const [stampOffset, setStampOffset] = useState(1.0);
+    const [silhouetteMargin, setSilhouetteMargin] = useState(4.0);
+    const [isModalOpen, setIsModalOpen] = useState(false);
+
+    // Art size controls (declared before cutter shape so computed values below can reference them)
+    const [artHeight, setArtHeight] = useState(70);
+    const [artWidth, setArtWidth] = useState(70);
+    const [lockAspectRatio, setLockAspectRatio] = useState(true);
+    const [svgAspectRatio, setSvgAspectRatio] = useState(1.0); // width / height
+
+    // Cutter shape
+    type CutterShape = 'silhouette' | 'square' | 'circle' | 'rectangle' | 'hexagon';
+    const [cutterShape, setCutterShape] = useState<CutterShape>('silhouette');
+    // User-adjustable dims for rectangle/hexagon (always >= art + 2*margin)
+    const [cutterW, setCutterW] = useState(78);
+    const [cutterH, setCutterH] = useState(78);
+    // Minimum allowed dims based on current art + margin
+    const minCutterW = artWidth + silhouetteMargin * 2;
+    const minCutterH = artHeight + silhouetteMargin * 2;
+    // Auto-computed for square/circle: max(art dim) + 2*margin
+    const autoSize = Math.max(artWidth, artHeight) + silhouetteMargin * 2;
+    // Effective dims sent to backend
+    const effectiveCutterW = cutterShape === 'square' || cutterShape === 'circle'
+        ? autoSize : Math.max(cutterW, minCutterW);
+    const effectiveCutterH = cutterShape === 'square' || cutterShape === 'circle'
+        ? autoSize : Math.max(cutterH, minCutterH);
+
+
+    const [svgPreview, setSvgPreview] = useState<{
+        originalSvg: string;
+        thickenedSvg: string;
+        silhouetteSvg: string;
+    } | null>(null);
+
+    // Ref for hidden file input — allows programmatic trigger AND value-reset (fixes same-filename bug)
+    const fileInputRef = useRef<HTMLInputElement>(null);
+    const triggerFilePicker = () => {
+        if (fileInputRef.current) {
+            fileInputRef.current.value = ''; // reset so same filename triggers onChange
+            fileInputRef.current.click();
+        }
+    };
+
+    const handleSvgUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        setSvgFile(file);
+
+        const reader = new FileReader();
+        reader.onload = async (evt) => {
+            const text = evt.target?.result as string;
+            if (!text) return;
+            setSvgText(text);
+
+            // Extract natural SVG dimensions for aspect ratio
+            try {
+                const parser = new DOMParser();
+                const doc = parser.parseFromString(text, 'image/svg+xml');
+                const svgEl = doc.querySelector('svg');
+                let natW = 0, natH = 0;
+                if (svgEl) {
+                    const vb = svgEl.getAttribute('viewBox');
+                    if (vb) {
+                        const parts = vb.split(/[\s,]+/).map(Number);
+                        if (parts.length >= 4) { natW = parts[2]; natH = parts[3]; }
+                    }
+                    if (!natW) natW = parseFloat(svgEl.getAttribute('width') || '0');
+                    if (!natH) natH = parseFloat(svgEl.getAttribute('height') || '0');
+                }
+                if (natW > 0 && natH > 0) {
+                    const ratio = natW / natH;
+                    setSvgAspectRatio(ratio);
+                    setArtHeight(70);
+                    setArtWidth(Math.round(70 * ratio * 10) / 10);
+                }
+            } catch (_) { }
+
+            try {
+                const processed = await processSvgFile(text, thickness, 3.0);
+                setSvgPreview(processed);
+                setIsModalOpen(true);
+            } catch (err) {
+                console.error("SVG Processing Error:", err);
+                alert("Erro ao processar o arquivo SVG. Tem certeza que há geometria vetorial?");
+            }
+        };
+        reader.readAsText(file);
+    };
+
+    const handleHeightChange = (val: number) => {
+        setArtHeight(val);
+        if (lockAspectRatio) setArtWidth(Math.round(val * svgAspectRatio * 10) / 10);
+    };
+
+    const handleWidthChange = (val: number) => {
+        setArtWidth(val);
+        if (lockAspectRatio) setArtHeight(Math.round(val / svgAspectRatio * 10) / 10);
+    };
+
+    const handleModalConfirm = (processed: any, finalThickness: number) => {
+        setSvgPreview(processed);
+        setThickness(finalThickness);
+        setIsModalOpen(false);
+    };
+
+    const handleGenerateClick = async () => {
+        if (!svgPreview) return;
+        setIsGenerating(true);
+        setCarimbBaseUrl(null);
+        setCarimbArteUrl(null);
+        setCortadorUrl(null);
+        try {
+            const formData = new FormData();
+            const linhasBlob = new Blob([svgPreview.thickenedSvg], { type: 'image/svg+xml' });
+            const silhuetaBlob = new Blob([svgPreview.silhouetteSvg], { type: 'image/svg+xml' });
+
+            formData.append('linhas_svg', linhasBlob, 'linhas.svg');
+            formData.append('silhueta_svg', silhuetaBlob, 'silhueta.svg');
+
+            formData.append('wall_thickness', '1.2');
+            formData.append('base_height', '2.0');
+            formData.append('folga', stampOffset.toString());
+            formData.append('art_width', artWidth.toString());
+            formData.append('art_height', artHeight.toString());
+            // Convert pixel thickness to mm offset: 1px ≈ 0.3mm at typical SVG scale
+            formData.append('line_offset', (thickness * 0.3).toString());
+            formData.append('silhouette_exp', silhouetteMargin.toString());
+            formData.append('cutter_shape', cutterShape);
+            formData.append('cutter_width', effectiveCutterW.toString());
+            formData.append('cutter_height', effectiveCutterH.toString());
+
+            const res = await axios.post('http://localhost:8000/api/generate/cortador_cookie', formData);
+
+            if (res.data?.files) {
+                const base = 'http://localhost:8000';
+                if (res.data.files.carimbo_base) setCarimbBaseUrl(`${base}${res.data.files.carimbo_base}`);
+                if (res.data.files.carimbo_arte) setCarimbArteUrl(`${base}${res.data.files.carimbo_arte}`);
+                if (res.data.files.cortador) setCortadorUrl(`${base}${res.data.files.cortador}`);
+            }
+        } catch (err) {
+            console.error("Error generating piecess:", err);
+            alert("Falha ao gerar o modelo 3D.");
+        } finally {
+            setIsGenerating(false);
+        }
+    };
+
+    return (
+        <div className="min-h-screen bg-neutral-900 text-neutral-200 flex flex-col font-sans">
+            <SvgPreviewModal
+                isOpen={isModalOpen}
+                onClose={() => setIsModalOpen(false)}
+                onConfirm={handleModalConfirm}
+                onLoadAnother={() => { setIsModalOpen(false); triggerFilePicker(); }}
+                svgText={svgText}
+                initialThickness={thickness}
+            />
+
+            {/* Header Pipeline Status */}
+            <header className="flex items-center justify-between px-6 py-4 bg-neutral-950 border-b border-neutral-800">
+                <Link to="/" className="flex items-center gap-3 text-emerald-500 font-bold text-xl tracking-wide hover:text-emerald-400 transition-colors">
+                    <Scissors className="w-6 h-6" />
+                    <span>TRECOLETES 3D</span>
+                </Link>
+                <div className="text-sm text-neutral-500 flex items-center gap-2">
+                    <Link to="/" className="hover:text-emerald-400 transition-colors flex items-center gap-1"><Home className="w-4 h-4" /> Vitrine</Link>
+                    <ChevronRight className="w-3 h-3" />
+                    <span className="text-neutral-400">Produtos</span>
+                    <ChevronRight className="w-3 h-3" />
+                    <strong className="text-emerald-400">Gerador: Cortador de Biscoito</strong>
+                </div>
+            </header>
+
+            {/* Main App Layout */}
+            <main className="flex-1 flex overflow-hidden">
+
+                {/* Left Sidebar Controls */}
+                <aside className="w-96 flex-shrink-0 bg-neutral-900 border-r border-neutral-800 flex flex-col overflow-y-auto">
+                    <div className="p-6 space-y-8">
+
+                        {/* Section: Upload SVG */}
+                        <div className="space-y-3">
+                            <h2 className="text-sm font-semibold text-neutral-400 uppercase tracking-widest flex items-center gap-2">
+                                <Upload className="w-4 h-4" /> Arte Principal
+                            </h2>
+
+                            {/* Hidden file input — triggered programmatically */}
+                            <input
+                                ref={fileInputRef}
+                                type="file"
+                                className="hidden"
+                                accept=".svg"
+                                onChange={handleSvgUpload}
+                            />
+
+                            {/* Upload area: if SVG loaded → reopen modal; else → open picker */}
+                            {svgPreview ? (
+                                <button
+                                    onClick={() => setIsModalOpen(true)}
+                                    className="w-full block border-2 border-emerald-700/50 hover:border-emerald-500 rounded-lg p-4 text-center cursor-pointer transition-colors bg-neutral-950/50"
+                                >
+                                    <span className="text-emerald-400 font-medium text-sm">{svgFile ? svgFile.name : 'Arte carregada'}</span>
+                                </button>
+                            ) : (
+                                <button
+                                    onClick={triggerFilePicker}
+                                    className="w-full block border-2 border-dashed border-neutral-700 hover:border-emerald-500 rounded-lg p-4 text-center cursor-pointer transition-colors bg-neutral-950/50"
+                                >
+                                    <span className="text-emerald-400 font-medium text-sm">Selecionar arquivo SVG</span>
+                                </button>
+                            )}
+
+                            {/* SVG Preview thumbnail */}
+                            {svgPreview && (
+                                <div className="relative rounded-lg overflow-hidden border border-neutral-700" style={{ backgroundColor: '#f0ebe3' }}>
+                                    <div
+                                        dangerouslySetInnerHTML={{ __html: svgPreview.thickenedSvg }}
+                                        className="w-full [&>svg]:w-full [&>svg]:h-auto [&>svg]:max-h-48 [&>svg]:object-contain p-2"
+                                    />
+                                    <button
+                                        onClick={() => setIsModalOpen(true)}
+                                        className="absolute top-2 right-2 text-xs bg-neutral-900/80 hover:bg-emerald-700 text-neutral-300 hover:text-white px-2 py-1 rounded border border-neutral-700 transition-colors backdrop-blur-sm"
+                                    >
+                                        Editar
+                                    </button>
+                                </div>
+                            )}
+
+                            {/* Section: Parameters */}
+                            <div className="space-y-4">
+                                <h2 className="text-sm font-semibold text-neutral-400 uppercase tracking-widest flex items-center gap-2">
+                                    <Sliders className="w-4 h-4" /> Configurações
+                                </h2>
+
+                                {/* Art Size */}
+                                <div className="space-y-2">
+                                    <label className="text-sm text-neutral-300 font-medium">Tamanho da Arte</label>
+                                    <div className="flex items-center gap-2">
+                                        <div className="flex-1 space-y-1">
+                                            <span className="text-xs text-neutral-500">Altura</span>
+                                            <div className="flex items-center gap-1">
+                                                <input
+                                                    type="number"
+                                                    min="10" max="300" step="1"
+                                                    value={artHeight}
+                                                    onChange={e => handleHeightChange(parseFloat(e.target.value) || 0)}
+                                                    className="w-full bg-neutral-800 border border-neutral-700 rounded px-2 py-1.5 text-sm text-white focus:border-emerald-500 focus:outline-none"
+                                                />
+                                                <span className="text-xs text-neutral-500">mm</span>
+                                            </div>
+                                        </div>
+
+                                        {/* Lock aspect ratio */}
+                                        <button
+                                            onClick={() => setLockAspectRatio(l => !l)}
+                                            title={lockAspectRatio ? 'Travar proporção (ativo)' : 'Travar proporção (inativo)'}
+                                            className={`self-center mt-4 p-1.5 rounded border transition-colors ${lockAspectRatio ? 'bg-emerald-700 border-emerald-500 text-white' : 'bg-neutral-800 border-neutral-700 text-neutral-500 hover:border-neutral-500'}`}
+                                        >
+                                            {lockAspectRatio ? (
+                                                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd" /></svg>
+                                            ) : (
+                                                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path d="M10 2a5 5 0 00-5 5v2a2 2 0 00-2 2v5a2 2 0 002 2h10a2 2 0 002-2v-5a2 2 0 00-2-2H7V7a3 3 0 015.905-.75 1 1 0 001.937-.5A5.002 5.002 0 0010 2z" /></svg>
+                                            )}
+                                        </button>
+
+                                        <div className="flex-1 space-y-1">
+                                            <span className="text-xs text-neutral-500">Largura</span>
+                                            <div className="flex items-center gap-1">
+                                                <input
+                                                    type="number"
+                                                    min="10" max="300" step="1"
+                                                    value={artWidth}
+                                                    onChange={e => handleWidthChange(parseFloat(e.target.value) || 0)}
+                                                    className="w-full bg-neutral-800 border border-neutral-700 rounded px-2 py-1.5 text-sm text-white focus:border-emerald-500 focus:outline-none"
+                                                />
+                                                <span className="text-xs text-neutral-500">mm</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    {lockAspectRatio && <p className="text-xs text-emerald-600/70">🔒 Proporção travada — {svgAspectRatio.toFixed(2)}:1</p>}
+                                </div>
+
+                                {/* Silhouette margin */}
+                                <div className="space-y-2">
+                                    <label className="flex justify-between text-sm">
+                                        <span>Espaçamento Arte/Borda</span>
+                                        <span className="text-emerald-400 font-mono">{silhouetteMargin.toFixed(1)}mm</span>
+                                    </label>
+                                    <input type="range" min="1" max="15" step="0.5" value={silhouetteMargin} onChange={e => setSilhouetteMargin(parseFloat(e.target.value))} className="w-full accent-emerald-500" />
+                                    <p className="text-xs text-neutral-500">Margem entre a arte e a borda da silhueta do carimbo.</p>
+                                </div>
+
+                                {/* Cutter shape */}
+                                <div className="space-y-2">
+                                    <label className="text-sm text-neutral-300 font-medium">Formato do Cortador</label>
+                                    <select
+                                        value={cutterShape}
+                                        onChange={e => setCutterShape(e.target.value as typeof cutterShape)}
+                                        className="w-full bg-neutral-800 border border-neutral-700 rounded px-2 py-1.5 text-sm text-white focus:border-emerald-500 focus:outline-none"
+                                    >
+                                        <option value="silhouette">Silhueta da arte</option>
+                                        <option value="square">Quadrado</option>
+                                        <option value="circle">Círculo</option>
+                                        <option value="rectangle">Retângulo</option>
+                                        <option value="hexagon">Hexágono</option>
+                                    </select>
+
+                                    {/* Square / Circle: show auto-computed size (read-only) */}
+                                    {(cutterShape === 'square' || cutterShape === 'circle') && (
+                                        <p className="text-xs text-emerald-500/80">
+                                            {cutterShape === 'circle' ? 'Diâmetro' : 'Lado'}: {autoSize.toFixed(1)} mm (auto)
+                                        </p>
+                                    )}
+
+                                    {/* Rectangle / Hexagon: editable width + height with minimum */}
+                                    {(cutterShape === 'rectangle' || cutterShape === 'hexagon') && (
+                                        <div className="space-y-2 pt-1">
+                                            <div className="flex items-center gap-2">
+                                                <div className="flex-1 space-y-1">
+                                                    <span className="text-xs text-neutral-500">Largura</span>
+                                                    <div className="flex items-center gap-1">
+                                                        <input
+                                                            type="number"
+                                                            min={Math.ceil(minCutterW)}
+                                                            step="1"
+                                                            value={Math.max(cutterW, minCutterW)}
+                                                            onChange={e => setCutterW(Math.max(parseFloat(e.target.value) || minCutterW, minCutterW))}
+                                                            className="w-full bg-neutral-800 border border-neutral-700 rounded px-2 py-1.5 text-sm text-white focus:border-emerald-500 focus:outline-none"
+                                                        />
+                                                        <span className="text-xs text-neutral-500">mm</span>
+                                                    </div>
+                                                </div>
+                                                <div className="flex-1 space-y-1">
+                                                    <span className="text-xs text-neutral-500">Altura</span>
+                                                    <div className="flex items-center gap-1">
+                                                        <input
+                                                            type="number"
+                                                            min={Math.ceil(minCutterH)}
+                                                            step="1"
+                                                            value={Math.max(cutterH, minCutterH)}
+                                                            onChange={e => setCutterH(Math.max(parseFloat(e.target.value) || minCutterH, minCutterH))}
+                                                            className="w-full bg-neutral-800 border border-neutral-700 rounded px-2 py-1.5 text-sm text-white focus:border-emerald-500 focus:outline-none"
+                                                        />
+                                                        <span className="text-xs text-neutral-500">mm</span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <p className="text-xs text-neutral-500">Mínimo: {minCutterW.toFixed(0)} × {minCutterH.toFixed(0)} mm (arte + espaçamento)</p>
+                                        </div>
+                                    )}
+                                </div>
+
+                                <div className="space-y-2">
+                                    <label className="flex justify-between text-sm">
+                                        <span>Folga Carimbo/Cortador</span>
+                                        <span className="text-emerald-400 font-mono">{stampOffset.toFixed(1)}mm</span>
+                                    </label>
+                                    <input type="range" min="0" max="3" step="0.1" value={stampOffset} onChange={e => setStampOffset(parseFloat(e.target.value))} className="w-full accent-emerald-500" />
+                                    <p className="text-xs text-neutral-500">Distanciamento de segurança entre a base do carimbo e a parede do cortador para encaixe fluído.</p>
+                                </div>
+                            </div>
+
+                        </div>
+                    </div>
+
+                    {/* Section: Colors */}
+                    <div className="space-y-3">
+                        <h2 className="text-sm font-semibold text-neutral-400 uppercase tracking-widest flex items-center gap-2">
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" /></svg>
+                            Cores da Visualização
+                        </h2>
+                        <div className="grid grid-cols-2 gap-4">
+                            {[
+                                { label: 'Modelo', color: modelColor, setter: setModelColor },
+                                { label: 'Arte', color: artColor, setter: setArtColor },
+                            ].map(({ label, color, setter }) => (
+                                <div key={label} className="flex flex-col items-center gap-1.5">
+                                    <label className="text-xs text-neutral-500">{label}</label>
+                                    <label className="relative cursor-pointer group">
+                                        <div
+                                            className="w-12 h-12 rounded-lg border-2 border-neutral-700 group-hover:border-emerald-500 transition-colors shadow-inner"
+                                            style={{ backgroundColor: color }}
+                                        />
+                                        <input
+                                            type="color"
+                                            value={color}
+                                            onChange={e => setter(e.target.value)}
+                                            className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+                                        />
+                                    </label>
+                                    <span className="text-[10px] font-mono text-neutral-600">{color}</span>
+                                </div>
+                            ))}
+                        </div>
+                        <p className="text-xs text-neutral-600">Apenas para visualização — não afeta o STL exportado.</p>
+                    </div>
+
+                    {/* Generate Button Fixed Bottom */}
+                    <div className="mt-auto p-4 border-t border-neutral-800 bg-neutral-950">
+                        <button
+                            onClick={handleGenerateClick}
+                            disabled={!svgFile || isGenerating}
+                            className="w-full py-3 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold rounded shadow-lg shadow-emerald-500/20 transition-all font-sans"
+                        >
+                            {isGenerating ? 'Gerando OpenSCAD...' : 'Gerar Peças 3D'}
+                        </button>
+                    </div>
+                </aside>
+
+                {/* Right Viewer Canvas */}
+                <section className="flex-1 p-4 relative min-w-0 min-h-0">
+                    <div className="absolute inset-4">
+                        <Viewer3D
+                            carimbBaseUrl={carimbBaseUrl}
+                            carimbArteUrl={carimbArteUrl}
+                            cortadorUrl={cortadorUrl}
+                            isGenerating={isGenerating}
+                            artColor={artColor}
+                            modelColor={modelColor}
+                        />
+                    </div>
+                </section>
+
+            </main>
+        </div>
+    );
+}
+
+function Vitrine() {
+    return (
+        <div className="min-h-screen bg-neutral-900 text-neutral-200 flex flex-col font-sans">
+            <header className="flex items-center justify-between px-6 py-4 bg-neutral-950 border-b border-neutral-800">
+                <div className="flex items-center gap-3 text-emerald-500 font-bold text-xl tracking-wide">
+                    <Scissors className="w-6 h-6" />
+                    <span>TRECOLETES 3D</span>
+                </div>
+            </header>
+            <main className="flex-1 p-12 flex flex-col items-center">
+                <h1 className="text-4xl justify-center font-bold text-emerald-500 mb-2">Vitrine de Produtos</h1>
+                <p className="text-neutral-400 mb-12 text-center text-lg">Escolha uma ferramenta abaixo para começar a gerar seus modelos 3D.</p>
+                <div className="w-full max-w-5xl grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+                    <Link to="/gerador/cortador_cookie" className="group bg-neutral-950 border border-neutral-800 p-8 rounded-2xl hover:border-emerald-500 transition-all hover:shadow-[0_0_30px_rgba(16,185,129,0.15)] block">
+                        <div className="w-16 h-16 bg-neutral-900 border border-neutral-800 text-emerald-500 rounded-xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
+                            <Scissors className="w-8 h-8" />
+                        </div>
+                        <h2 className="text-2xl font-bold group-hover:text-emerald-400 transition-colors mb-3">Cortador de Biscoito</h2>
+                        <p className="text-neutral-500 leading-relaxed text-sm">
+                            Gere conjuntos de cortador e carimbo para biscoitos e massas usando apenas arquivos SVG em 2D.
+                        </p>
+                    </Link>
+                </div>
+            </main>
+        </div>
+    );
+}
+
+export default function App() {
+    return (
+        <BrowserRouter>
+            <Routes>
+                <Route path="/" element={<Vitrine />} />
+                <Route path="/gerador/cortador_cookie" element={<Generator />} />
+            </Routes>
+        </BrowserRouter>
+    );
+}

@@ -2,13 +2,23 @@
 __pycache__/
 *.py[cod]
 *$py.class
+.venv/
 
 # Generated content
 web/static/generated/
 web/static/uploads/
+
+# Generated 3D output at root level (debug/test artifacts)
 *.stl
-*.scad
-!name_topper.scad
+*.3mf
+temp_*.scad
+temp_*.svg
+debug*.scad
+debug*.stl
+test_*.scad
+test_*.stl
+test_*.svg
+test.png
 
 # IDE
-.vscode/
+.vscode/settings.json

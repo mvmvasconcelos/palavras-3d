@@ -1,0 +1,1 @@
+function r(a){return!a||!Array.isArray(a)||a.length===0?[]:a.filter(e=>e&&e.filename&&e.format).map(e=>({name:`${e.filename}.${e.format.toLowerCase()}`,format:e.format.toLowerCase(),displayName:`${e.filename}.${e.format.toLowerCase()}`}))}export{r as g};

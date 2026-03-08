@@ -1,0 +1,9 @@
+{
+    "id": "cortador_cookie",
+    "title": {
+        "pt": "Cortador de Biscoito",
+        "en": "Cookie Cutter"
+    },
+    "output_format": "stl",
+    "sections": []
+}

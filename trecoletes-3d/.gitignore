@@ -1,0 +1,59 @@
+# ─── Generated runtime files ───────────────────────────────────────────────
+# Backend: per-request generated STLs and SVGs (UUID folders)
+backend/static/generated/
+
+# Backend: cached OpenSCAD output
+backend/static/stl/
+backend/static/*.stl
+backend/static/*.svg
+
+# ─── Python ──────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg
+*.egg-info/
+dist/
+build/
+*.so
+.venv/
+venv/
+env/
+.env
+
+# ─── Frontend dependencies & build ───────────────────────────────────────────
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+frontend/.cache/
+
+# ─── Docker ──────────────────────────────────────────────────────────────────
+# Keep docker-compose.yml but ignore override files
+docker-compose.override.yml
+.docker/
+
+# ─── Editor / OS ─────────────────────────────────────────────────────────────
+.vscode/settings.json
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ─── Logs ────────────────────────────────────────────────────────────────────
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ─── Misc ────────────────────────────────────────────────────────────────────
+*.bak
+*.tmp
+*.temp
