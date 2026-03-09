@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Canvas, useLoader, useFrame, useThree } from '@react-three/fiber';
-import { OrbitControls, Center } from '@react-three/drei';
+import { OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
 import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js';
 
@@ -97,17 +97,15 @@ export default function Viewer3D({ carimbBaseUrl, carimbArteUrl, cortadorUrl, is
                 <directionalLight position={[50, 50, 100]} intensity={1.5} castShadow shadow-mapSize={[2048, 2048]} />
 
                 <React.Suspense fallback={null}>
-                    <Center>
-                        {hasModel ? (
-                            <>
-                                {carimbBaseUrl && <StlMesh url={carimbBaseUrl} color={modelColor} />}
-                                {carimbArteUrl && <StlMesh url={carimbArteUrl} color={artColor} />}
-                                {cortadorUrl && <StlMesh url={cortadorUrl} color={modelColor} />}
-                            </>
-                        ) : (
-                            <PlaceholderModel />
-                        )}
-                    </Center>
+                    {hasModel ? (
+                        <>
+                            {carimbBaseUrl && <StlMesh url={carimbBaseUrl} color={modelColor} />}
+                            {carimbArteUrl && <StlMesh url={carimbArteUrl} color={artColor} />}
+                            {cortadorUrl && <StlMesh url={cortadorUrl} color={modelColor} />}
+                        </>
+                    ) : (
+                        <PlaceholderModel />
+                    )}
                 </React.Suspense>
 
                 <ControlsWithTarget />

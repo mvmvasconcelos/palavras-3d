@@ -32,13 +32,25 @@ art_center_y = art_height / 2.0;
 // art_svg: scales SVG to target mm size with optional line offset
 // ============================================================
 module art_svg() {
-    // paper.js normalises the exported SVG so the content bounding box starts at
-    // (0, 0) with viewBox="0 0 W H".  After OpenSCAD resize([art_width, art_height])
-    // the content spans:
-    //   X:  0  →  art_width
-    //   Y:  0  →  art_height
-    // Centre is at (art_width/2, art_height/2).
-    // We translate to move that centre to (0, 0).
+    // ── CENTERING DEBUG HISTORY ──────────────────────────────────
+    // The SVG from the frontend (paper.js) originally had viewBox much
+    // larger than content (e.g. "0 0 500 500" but paths at 90→410).
+    // OpenSCAD resize() scales from origin, so dead space scaled too,
+    // making the center NOT at (art_width/2, art_height/2).
+    //
+    // Attempt 1:  translate([-aw/2, +ah/2])   — WRONG (assumed Y-flip)
+    // Attempt 2:  translate([-aw/2, -ah/2])   — correct formula BUT
+    //             only works when SVG content starts at (0,0).
+    // Attempt 3:  Fixed svgProcessor.ts to translate each PathItem
+    //             individually (not the group).  Did NOT help because
+    //             paper.js exportSVG still emitted canvas-sized viewBox.
+    // Attempt 4 (current fix, 2026-03-09):
+    //   Backend normalize_svg_to_origin() in _svg_normalize.py now
+    //   parses SVG path data, finds true content bounds, adds
+    //   <g transform="translate(-minX,-minY)"> and sets viewBox to
+    //   "0 0 contentW contentH".  After this, resize() places art
+    //   reliably at (0,0)→(art_width, art_height).
+    // ─────────────────────────────────────────────────────────────
     translate([-art_width / 2, -art_height / 2]) {
         offset(r = line_offset) {
             resize([art_width, art_height, 0], auto=[false, false, false]) {
@@ -47,6 +59,7 @@ module art_svg() {
         }
     }
 }
+
 
 // ============================================================
 // silhoueta_shape: organic silhouette from artwork

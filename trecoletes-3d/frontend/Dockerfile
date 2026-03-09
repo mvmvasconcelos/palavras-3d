@@ -2,7 +2,10 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-# We don't copy package.json right away because the host will volume mount it.
-# However, for an initial build, we need it. 
-# We'll use a strategy where we just keep the container running for dev.
-CMD ["sh", "-c", "npm install && npm run dev -- --host 0.0.0.0"]
+# Copy package files and install dependencies at BUILD time.
+# The docker-compose anonymous volume (/app/node_modules) will
+# shadow the host bind-mount, keeping node_modules inside the image layer.
+COPY package.json package-lock.json* ./
+RUN npm install
+
+CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"]

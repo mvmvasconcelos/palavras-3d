@@ -6,6 +6,7 @@ import uuid
 from typing import List, Dict, Any
 from fastapi import APIRouter, UploadFile, Form, BackgroundTasks
 from fastapi.responses import JSONResponse
+from app.api._svg_normalize import normalize_svg_to_origin
 
 router = APIRouter()
 
@@ -94,17 +95,17 @@ async def generate_model(
     svg_bytes = await linhas_svg.read()
     # DEBUG: print raw SVG header to inspect viewBox from Paper.js
     print(f"[DEBUG linhas.svg first 300]: {svg_bytes[:300].decode('utf-8','ignore')}", flush=True)
-    svg_bytes = normalize_svg_viewbox(svg_bytes)  # ensure viewBox starts at (0,0)
-    print(f"[DEBUG linhas.svg after normalize first 300]: {svg_bytes[:300].decode('utf-8','ignore')}", flush=True)
+    svg_bytes = normalize_svg_viewbox(svg_bytes)  # shift viewBox origin to (0,0)
+    svg_bytes = normalize_svg_to_origin(svg_bytes)  # shift PATH CONTENT to (0,0)
+    print(f"[DEBUG linhas.svg after normalize first 400]: {svg_bytes[:400].decode('utf-8','ignore')}", flush=True)
     with open(linhas_path, "wb") as f:
         f.write(svg_bytes)
 
-    # After normalize_svg_viewbox the SVG viewBox is always (0 0 W H).
-    # paper.js also normalises paths so bounding box starts at (0,0).
-    # OpenSCAD import + resize([art_width, art_height]) places the
-    # content from (0,0)→(art_width, art_height) in SCAD XY space.
-    # art_svg() in model.scad adds translate([-art_width/2, -art_height/2])
-    # so the art ends up centred at (0, 0), aligned with main_outline().
+    # After normalize_svg_viewbox + normalize_svg_to_origin:
+    #   - viewBox is "0 0 contentW contentH" (content size, not canvas size)
+    #   - Path coordinates are shifted so bounding box starts at (0,0)
+    #   - OpenSCAD import + resize([art_w, art_h]) => content at (0,0)->(art_w, art_h)
+    #   - art_svg() in model.scad translates by [-art_w/2, -art_h/2] to centre at origin
     silhueta_path = os.path.join(job_dir, "silhueta.svg")
     with open(silhueta_path, "wb") as f:
         f.write(await silhueta_svg.read())

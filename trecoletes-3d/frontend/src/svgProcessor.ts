@@ -72,7 +72,13 @@ export async function processSvgFile(
                     // viewBox="0 0 W H", so OpenSCAD resize() places the art
                     // reliably at (0,0)→(art_width, art_height) in SCAD space.
                     const cb = item.bounds;
-                    item.translate(new paper.Point(-cb.left, -cb.top));
+                    // FIXED: translate each path individually to bake coords into path data.
+                    // (Group.translate adds a <g transform> that OpenSCAD ignores.)
+                    const dx = -cb.left;
+                    const dy = -cb.top;
+                    item.getItems({ class: paper.PathItem }).forEach((child) => {
+                        child.translate(new paper.Point(dx, dy));
+                    });
 
                     // 2. Thicken: set strokeWidth geometrically on cloned filled paths.
                     // Paper.js exports stroke as SVG attribute. OpenSCAD respects stroke-width
