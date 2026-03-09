@@ -67,6 +67,13 @@ export async function processSvgFile(
                         return;
                     }
 
+                    // Normalize: translate everything so the content bounding box
+                    // starts at (0, 0). This ensures the exported SVG has
+                    // viewBox="0 0 W H", so OpenSCAD resize() places the art
+                    // reliably at (0,0)→(art_width, art_height) in SCAD space.
+                    const cb = item.bounds;
+                    item.translate(new paper.Point(-cb.left, -cb.top));
+
                     // 2. Thicken: set strokeWidth geometrically on cloned filled paths.
                     // Paper.js exports stroke as SVG attribute. OpenSCAD respects stroke-width
                     // when importing SVG, expanding the rendered geometry.

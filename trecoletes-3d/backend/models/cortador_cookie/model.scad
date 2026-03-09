@@ -21,19 +21,29 @@ cutter_shape  = "silhouette";
 cutter_width  = 80.0; // [mm] used by square/circle/rectangle/hexagon
 cutter_height = 80.0; // [mm] used by rectangle/hexagon
 
-// True center of the artwork in OpenSCAD coordinate space.
-// Computed by the backend from the SVG viewBox after resize([art_width, art_height]).
-// This is where geometric cutter shapes should be centred.
-art_center_x = art_width  / 2.0; // backend overrides this
-art_center_y = art_height / 2.0; // backend overrides this
+// Art centre in OpenSCAD SCAD space after resize([art_width, art_height]).
+// Because svgProcessor.ts normalises the exported SVG to start at (0,0),
+// the content reliably spans (0,0)→(art_width, art_height), so the centre is
+// always at (art_width/2, art_height/2).  The backend may override these.
+art_center_x = art_width  / 2.0;
+art_center_y = art_height / 2.0;
 
 // ============================================================
 // art_svg: scales SVG to target mm size with optional line offset
 // ============================================================
 module art_svg() {
-    offset(r = line_offset) {
-        resize([art_width, art_height, 0], auto=[false, false, false]) {
-            import(svg_linhas_path);
+    // paper.js normalises the exported SVG so the content bounding box starts at
+    // (0, 0) with viewBox="0 0 W H".  After OpenSCAD resize([art_width, art_height])
+    // the content spans:
+    //   X:  0  →  art_width
+    //   Y:  0  →  art_height
+    // Centre is at (art_width/2, art_height/2).
+    // We translate to move that centre to (0, 0).
+    translate([-art_width / 2, -art_height / 2]) {
+        offset(r = line_offset) {
+            resize([art_width, art_height, 0], auto=[false, false, false]) {
+                import(svg_linhas_path);
+            }
         }
     }
 }
@@ -56,34 +66,26 @@ module silhoueta_shape(extra_r = 0) {
 
 // ============================================================
 // main_outline: dispatches to the selected cutter shape.
-// Geometric shapes (square/circle/rectangle/hexagon) are centred
-// on the art bounding-box midpoint (art_width/2, art_height/2).
-// extra_r adds uniform outward offset (used for wall thickness
-// and brim).
+// All shapes are centred at (0,0) — same as art_svg() above.
+// extra_r adds uniform outward offset (wall thickness / brim).
 // ============================================================
 module main_outline(extra_r = 0) {
     if (cutter_shape == "silhouette" || cutter_shape == "") {
+        // silhouete_shape is derived from art_svg(), so it is also at (0,0).
         silhoueta_shape(extra_r);
+    } else if (cutter_shape == "square") {
+        s = cutter_width + extra_r * 2;
+        square([s, s], center = true);
+    } else if (cutter_shape == "circle") {
+        circle(r = cutter_width / 2 + extra_r, $fn = 128);
+    } else if (cutter_shape == "rectangle") {
+        square([cutter_width  + extra_r * 2,
+                cutter_height + extra_r * 2], center = true);
+    } else if (cutter_shape == "hexagon") {
+        r_hex = (cutter_width / 2) / cos(30);
+        circle(r = r_hex + extra_r, $fn = 6);
     } else {
-        // Centre on the actual artwork bounding-box centre.
-        // art_center_x/Y are computed by the backend from the SVG viewBox.
-        translate([art_center_x, art_center_y]) {
-            if (cutter_shape == "square") {
-                s = cutter_width + extra_r * 2;
-                square([s, s], center = true);
-            } else if (cutter_shape == "circle") {
-                circle(r = cutter_width / 2 + extra_r, $fn = 128);
-            } else if (cutter_shape == "rectangle") {
-                square([cutter_width  + extra_r * 2,
-                        cutter_height + extra_r * 2], center = true);
-            } else if (cutter_shape == "hexagon") {
-                r_hex = (cutter_width / 2) / cos(30);
-                circle(r = r_hex + extra_r, $fn = 6);
-            } else {
-                // fallback: silhouette
-                silhoueta_shape(extra_r);
-            }
-        }
+        silhoueta_shape(extra_r); // fallback
     }
 }
 

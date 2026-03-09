@@ -31,7 +31,7 @@ function ControlsWithTarget() {
     return (
         <OrbitControls
             makeDefault
-            target={[60.2, 48.4, 0.9]}
+            target={[0, 0, 0]}
             onChange={(e) => {
                 if (e?.target?.object) {
                     (e.target.object as any).__orbitTarget = e.target.target.clone();
@@ -90,7 +90,7 @@ export default function Viewer3D({ carimbBaseUrl, carimbArteUrl, cortadorUrl, is
                 </div>
             )}
 
-            <Canvas shadows camera={{ position: [51.8, 6.9, 188.3], fov: 45 }}>
+            <Canvas shadows camera={{ position: [0, -180, 80], fov: 45 }}>
                 <color attach="background" args={['#262626']} />
                 <ambientLight intensity={0.5} />
                 <hemisphereLight intensity={0.5} color="#ffffff" groundColor="#404040" />
@@ -112,6 +112,7 @@ export default function Viewer3D({ carimbBaseUrl, carimbArteUrl, cortadorUrl, is
 
                 <ControlsWithTarget />
                 <CameraTracker onUpdate={setCamInfo} />
+                <axesHelper args={[50]} />
             </Canvas>
 
             {camInfo && (

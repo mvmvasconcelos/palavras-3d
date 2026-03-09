@@ -14,6 +14,55 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__fil
 MODELS_DIR = os.path.join(BASE_DIR, "models")
 GENERATED_DIR = os.path.join(BASE_DIR, "static", "generated")
 
+
+def normalize_svg_viewbox(svg_bytes: bytes) -> bytes:
+    """
+    Shift the SVG coordinate system so the viewBox starts at (0, 0).
+    Without this, OpenSCAD's resize() may place the art offset from
+    the origin, making centering impossible from within SCAD.
+
+    Strategy:
+      1. Parse the viewBox (x y w h).  If x==0 and y==0, return as-is.
+      2. Update viewBox to '0 0 w h'.
+      3. Wrap all SVG children in <g transform='translate(-x, -y)'>
+         so coordinates become relative to the new origin.
+    """
+    try:
+        text = svg_bytes.decode('utf-8', errors='replace')
+
+        vb_match = re.search(r'viewBox=["\']([-\d\s.]+)["\']', text)
+        if not vb_match:
+            return svg_bytes
+
+        parts = list(map(float, vb_match.group(1).split()))
+        if len(parts) != 4:
+            return svg_bytes
+
+        vb_x, vb_y, vb_w, vb_h = parts
+        if abs(vb_x) < 0.001 and abs(vb_y) < 0.001:
+            return svg_bytes  # already at origin
+
+        # Update viewBox to start at (0, 0)
+        text = re.sub(
+            r'viewBox=["\']([-\d\s.]+)["\']',
+            f'viewBox="0 0 {vb_w} {vb_h}"',
+            text, count=1
+        )
+
+        # Wrap children: insert <g translate> right after the opening <svg...> tag
+        svg_tag_end = re.search(r'<svg\b[^>]*>', text)
+        if svg_tag_end:
+            insert_pos = svg_tag_end.end()
+            g_open = f'<g transform="translate({-vb_x} {-vb_y})">'  # SVG uses space, not comma
+            text = text[:insert_pos] + g_open + text[insert_pos:]
+            # Close the group before </svg>
+            text = text.rsplit('</svg>', 1)
+            text = '</g></svg>'.join(text)
+
+        return text.encode('utf-8')
+    except Exception:
+        return svg_bytes  # safe fallback
+
 @router.post("/generate/{model_id}")
 async def generate_model(
     model_id: str,
@@ -43,30 +92,19 @@ async def generate_model(
     # Save incoming SVGs to the job directory
     linhas_path = os.path.join(job_dir, "linhas.svg")
     svg_bytes = await linhas_svg.read()
+    # DEBUG: print raw SVG header to inspect viewBox from Paper.js
+    print(f"[DEBUG linhas.svg first 300]: {svg_bytes[:300].decode('utf-8','ignore')}", flush=True)
+    svg_bytes = normalize_svg_viewbox(svg_bytes)  # ensure viewBox starts at (0,0)
+    print(f"[DEBUG linhas.svg after normalize first 300]: {svg_bytes[:300].decode('utf-8','ignore')}", flush=True)
     with open(linhas_path, "wb") as f:
         f.write(svg_bytes)
 
-    # Parse the SVG viewBox to find the true content center.
-    # Paper.js exports with bounds='content', so viewBox = "x y w h" where
-    # x,y are the actual coordinate origin of the content (not necessarily 0,0).
-    # OpenSCAD's resize() scales around (0,0), so the center in SCAD space is:
-    #   center_x = (x + w/2) * (art_width  / w)
-    #   center_y = (y + h/2) * (art_height / h)
-    art_center_x = art_width  / 2.0  # fallback
-    art_center_y = art_height / 2.0  # fallback
-    try:
-        svg_text = svg_bytes.decode('utf-8', errors='ignore')
-        vb_match = re.search(r'viewBox=["\']([\d\s.\-]+)["\']', svg_text)
-        if vb_match:
-            vb = list(map(float, vb_match.group(1).split()))
-            if len(vb) == 4:
-                vb_x, vb_y, vb_w, vb_h = vb
-                if vb_w > 0 and vb_h > 0:
-                    art_center_x = (vb_x + vb_w / 2.0) * (art_width  / vb_w)
-                    art_center_y = (vb_y + vb_h / 2.0) * (art_height / vb_h)
-    except Exception:
-        pass  # keep fallback
-
+    # After normalize_svg_viewbox the SVG viewBox is always (0 0 W H).
+    # paper.js also normalises paths so bounding box starts at (0,0).
+    # OpenSCAD import + resize([art_width, art_height]) places the
+    # content from (0,0)→(art_width, art_height) in SCAD XY space.
+    # art_svg() in model.scad adds translate([-art_width/2, -art_height/2])
+    # so the art ends up centred at (0, 0), aligned with main_outline().
     silhueta_path = os.path.join(job_dir, "silhueta.svg")
     with open(silhueta_path, "wb") as f:
         f.write(await silhueta_svg.read())
@@ -86,9 +124,7 @@ async def generate_model(
         "-D", f'silhouette_exp={silhouette_exp}',
         "-D", f'cutter_shape="{cutter_shape}"',
         "-D", f'cutter_width={cutter_width}',
-        "-D", f'cutter_height={cutter_height}',
-        "-D", f'art_center_x={art_center_x}',
-        "-D", f'art_center_y={art_center_y}'
+        "-D", f'cutter_height={cutter_height}'
     ]
 
     parts_to_render = ["carimbo_base", "carimbo_arte", "cortador"]
