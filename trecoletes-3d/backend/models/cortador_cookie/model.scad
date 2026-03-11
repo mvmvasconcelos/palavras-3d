@@ -9,12 +9,15 @@ art_height = 70.0;   // [mm] target artwork height
 // Heights and Config
 base_height    = 2.0;
 line_height    = 4.0;
-wall_height    = 12.0;
-brim_width     = 3.0;
-wall_thickness = 1.2;
+wall_height    = 15.0;
+brim_width     = 5.0;
+wall_thickness = 2.5;
 silhouette_exp = 4.0; // [mm] spacing between art boundary and silhouette edge
-folga          = 1.0;
+folga          = 2.0;
 line_offset    = 0.0; // [mm] expand artwork lines outward (stroke width effect)
+sharp_edge     = true;
+chamfer_height = 2.5; // Fixed height for the chamfer on top of the cutter
+cutter_rounding = 2.0; // [mm] rounding of the external corners of the cutter
 
 // Cutter shape: "silhouette" | "square" | "circle" | "rectangle" | "hexagon"
 cutter_shape  = "silhouette";
@@ -88,15 +91,20 @@ module main_outline(extra_r = 0) {
         silhoueta_shape(extra_r);
     } else if (cutter_shape == "square") {
         s = cutter_width + extra_r * 2;
-        square([s, s], center = true);
+        offset(r = cutter_rounding, $fn = 32)
+            offset(delta = -cutter_rounding)
+                square([s, s], center = true);
     } else if (cutter_shape == "circle") {
         circle(r = cutter_width / 2 + extra_r, $fn = 128);
     } else if (cutter_shape == "rectangle") {
-        square([cutter_width  + extra_r * 2,
-                cutter_height + extra_r * 2], center = true);
+        offset(r = cutter_rounding, $fn = 32)
+            offset(delta = -cutter_rounding)
+                square([cutter_width  + extra_r * 2, cutter_height + extra_r * 2], center = true);
     } else if (cutter_shape == "hexagon") {
         r_hex = (cutter_width / 2) / cos(30);
-        circle(r = r_hex + extra_r, $fn = 6);
+        offset(r = cutter_rounding, $fn = 32)
+            offset(delta = -cutter_rounding)
+                circle(r = r_hex + extra_r, $fn = 6);
     } else {
         silhoueta_shape(extra_r); // fallback
     }
@@ -110,9 +118,7 @@ module main_outline(extra_r = 0) {
 module carimbo() {
     color("SlateGray")
     linear_extrude(height = base_height) {
-        offset(r = -folga) {
-            main_outline();
-        }
+        main_outline(extra_r = -folga);
     }
 
     color("WhiteSmoke")
@@ -129,19 +135,50 @@ module carimbo() {
 // ============================================================
 module cortador() {
     color("IndianRed")
-    difference() {
-        linear_extrude(height = wall_height) {
-            main_outline(extra_r = wall_thickness);
+    if (sharp_edge) {
+        // Flat wall up to the start of the chamfer
+        difference() {
+            linear_extrude(height = wall_height - chamfer_height + 0.01) {
+                main_outline(extra_r = wall_thickness);
+            }
+            translate([0, 0, -1])
+            linear_extrude(height = wall_height + 2) {
+                main_outline();
+            }
         }
-        translate([0, 0, -1])
-        linear_extrude(height = wall_height + 2) {
-            main_outline();
+        
+        // Chamfered top (stepped layers)
+        // Shrinks from wall_thickness to an almost sharp 0.4mm ridge
+        translate([0, 0, wall_height - chamfer_height])
+        for (i = [0 : 9]) {
+            z = i * (chamfer_height / 10);
+            h = (chamfer_height / 10) + 0.01;
+            shrink_amount = (wall_thickness - 0.4) * (i / 9);
+            
+            translate([0, 0, z])
+            linear_extrude(height = h) {
+                difference() {
+                    main_outline(extra_r = wall_thickness - shrink_amount);
+                    main_outline();
+                }
+            }
+        }
+    } else {
+        // Normal flat-top wall
+        difference() {
+            linear_extrude(height = wall_height) {
+                main_outline(extra_r = wall_thickness);
+            }
+            translate([0, 0, -1])
+            linear_extrude(height = wall_height + 2) {
+                main_outline();
+            }
         }
     }
 
     color("FireBrick")
-    translate([0, 0, wall_height - 1.5])
-    linear_extrude(height = 1.5) {
+    // Brim at the bottom (Z=0) so it prints on the bed without supports
+    linear_extrude(height = 2.0) {
         difference() {
             main_outline(extra_r = wall_thickness + brim_width);
             main_outline(extra_r = wall_thickness);

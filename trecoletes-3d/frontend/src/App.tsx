@@ -132,33 +132,64 @@ function Generator() {
 
     const [svgFile, setSvgFile] = useState<File | null>(null);
     const [svgText, setSvgText] = useState<string | null>(null);
-    const [thickness, setThickness] = useState(0.5);
-    const [stampOffset, setStampOffset] = useState(1.0);
-    const [silhouetteMargin, setSilhouetteMargin] = useState(4.0);
+
+    // -- ESTADO DINÂMICO (Server-Driven UI) --
+    const [modelConfig, setModelConfig] = useState<any>(null);
+    const [dynamicParams, setDynamicParams] = useState<Record<string, any>>({});
+
+    // Busca a configuração do modelo ao carregar
+    React.useEffect(() => {
+        let isMounted = true;
+        const fetchConfig = async () => {
+            try {
+                const res = await axios.get('http://localhost:8000/api/models/cortador_cookie/config');
+                if (isMounted && res.data && res.data.parameters) {
+                    setModelConfig(res.data);
+                    const initialParams: Record<string, any> = {};
+                    res.data.parameters.forEach((param: any) => {
+                        initialParams[param.id] = param.default;
+                    });
+                    setDynamicParams(initialParams);
+                }
+            } catch (err) {
+                console.error("Erro ao carregar configuração do modelo:", err);
+            }
+        };
+        fetchConfig();
+        return () => { isMounted = false; };
+    }, []);
+
+    // Helper para atualizar parâmetros dinâmicos
+    const handleDynamicParamChange = (id: string, value: any) => {
+        setDynamicParams(prev => ({ ...prev, [id]: value }));
+    };
+
     const [isModalOpen, setIsModalOpen] = useState(false);
 
-    // Art size controls (declared before cutter shape so computed values below can reference them)
+    // Controle de tamanho da arte
     const [artHeight, setArtHeight] = useState(70);
     const [artWidth, setArtWidth] = useState(70);
     const [lockAspectRatio, setLockAspectRatio] = useState(true);
     const [svgAspectRatio, setSvgAspectRatio] = useState(1.0); // width / height
 
-    // Cutter shape
+    // Formatos e variáveis calculadas
     type CutterShape = 'silhouette' | 'square' | 'circle' | 'rectangle' | 'hexagon';
     const [cutterShape, setCutterShape] = useState<CutterShape>('silhouette');
-    // User-adjustable dims for rectangle (always >= art + 2*margin)
     const [cutterW, setCutterW] = useState(78);
     const [cutterH, setCutterH] = useState(78);
-    // Minimum allowed dims based on current art + margin
-    const minCutterW = artWidth + silhouetteMargin * 2;
-    const minCutterH = artHeight + silhouetteMargin * 2;
-    // Auto-computed dims
+
+    // Pega a margem da silhueta do estado dinâmico (usa 4.0 como fallback se não carregou)
+    const currentSilhouetteExp = dynamicParams['silhouette_exp'] ?? 4.0;
+
+    const minCutterW = artWidth + currentSilhouetteExp * 2;
+    const minCutterH = artHeight + currentSilhouetteExp * 2;
+
     const artDiag = Math.sqrt(artWidth * artWidth + artHeight * artHeight);
-    const autoSquareSize = Math.max(artWidth, artHeight) + silhouetteMargin * 2;
-    const autoCircleHexSize = artDiag + silhouetteMargin * 2;
+    const autoSquareSize = Math.max(artWidth, artHeight) + currentSilhouetteExp * 2;
+    const autoCircleHexSize = artDiag + currentSilhouetteExp * 2;
     const isAutoShape = cutterShape === 'square' || cutterShape === 'circle' || cutterShape === 'hexagon';
     const autoSize = cutterShape === 'square' ? autoSquareSize : autoCircleHexSize;
-    // Effective dims sent to backend
+
     const effectiveCutterW = isAutoShape ? autoSize : Math.max(cutterW, minCutterW);
     const effectiveCutterH = isAutoShape ? autoSize : Math.max(cutterH, minCutterH);
 
@@ -213,7 +244,9 @@ function Generator() {
             } catch (_) { }
 
             try {
-                const processed = await processSvgFile(text, thickness, 3.0);
+                // Ao carregar pela primeira vez, usa o valor atual do estado dinâmico (fallback 0.5)
+                const currentLineOffset = dynamicParams['line_offset'] ?? 0.5;
+                const processed = await processSvgFile(text, currentLineOffset, 3.0);
                 setSvgPreview(processed);
                 setIsModalOpen(true);
             } catch (err) {
@@ -236,7 +269,7 @@ function Generator() {
 
     const handleModalConfirm = (processed: any, finalThickness: number) => {
         setSvgPreview(processed);
-        setThickness(finalThickness);
+        handleDynamicParamChange('line_offset', finalThickness); // Atualiza o parâmetro dinâmico
         setIsModalOpen(false);
     };
 
@@ -254,17 +287,23 @@ function Generator() {
             formData.append('linhas_svg', linhasBlob, 'linhas.svg');
             formData.append('silhueta_svg', silhuetaBlob, 'silhueta.svg');
 
-            formData.append('wall_thickness', '1.2');
             formData.append('base_height', '2.0');
-            formData.append('folga', stampOffset.toString());
-            formData.append('art_width', artWidth.toString());
             formData.append('art_height', artHeight.toString());
-            // Convert pixel thickness to mm offset: 1px ≈ 0.3mm at typical SVG scale
-            formData.append('line_offset', (thickness * 0.3).toString());
-            formData.append('silhouette_exp', silhouetteMargin.toString());
             formData.append('cutter_shape', cutterShape);
             formData.append('cutter_width', effectiveCutterW.toString());
             formData.append('cutter_height', effectiveCutterH.toString());
+
+            // Envia todos os parâmetros dinâmicos lidos do config.json
+            if (modelConfig && modelConfig.parameters) {
+                modelConfig.parameters.forEach((param: any) => {
+                    let val = dynamicParams[param.id] ?? param.default;
+                    // Se houver um multiplicador (ex: transformar px em mm pro SCAD)
+                    if (param.scad_multiplier) {
+                        val = val * param.scad_multiplier;
+                    }
+                    formData.append(param.id, val.toString());
+                });
+            }
 
             const res = await axios.post('http://localhost:8000/api/generate/cortador_cookie', formData);
 
@@ -290,7 +329,7 @@ function Generator() {
                 onConfirm={handleModalConfirm}
                 onLoadAnother={() => { setIsModalOpen(false); triggerFilePicker(); }}
                 svgText={svgText}
-                initialThickness={thickness}
+                initialThickness={dynamicParams['line_offset'] ?? 0.5}
             />
 
             {/* Header Pipeline Status */}
@@ -417,15 +456,57 @@ function Generator() {
                                     {lockAspectRatio && <p className="text-xs text-emerald-600/70">🔒 Proporção travada — {svgAspectRatio.toFixed(2)}:1</p>}
                                 </div>
 
-                                {/* Silhouette margin */}
-                                <div className="space-y-2">
-                                    <label className="flex justify-between text-sm">
-                                        <span>Espaçamento Arte/Borda</span>
-                                        <span className="text-emerald-400 font-mono">{silhouetteMargin.toFixed(1)}mm</span>
-                                    </label>
-                                    <input type="range" min="1" max="15" step="0.5" value={silhouetteMargin} onChange={e => setSilhouetteMargin(parseFloat(e.target.value))} className="w-full accent-emerald-500" />
-                                    <p className="text-xs text-neutral-500">Margem entre a arte e a borda da silhueta do carimbo.</p>
-                                </div>
+                                {/* Parâmetros Dinâmicos (Server-Driven) */}
+                                {modelConfig?.parameters
+                                    ?.filter((p: any) => p.id !== 'line_offset') // line_offset é editado no modal
+                                    .map((param: any) => {
+                                        const currentValue = dynamicParams[param.id] ?? param.default;
+
+                                        if (param.type === 'boolean') {
+                                            return (
+                                                <div key={param.id} className="space-y-2 pt-2 pb-1">
+                                                    <label className="flex items-start gap-3 cursor-pointer group">
+                                                        <div className="relative flex-shrink-0 flex items-center justify-center mt-0.5">
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={Boolean(currentValue)}
+                                                                onChange={e => handleDynamicParamChange(param.id, e.target.checked)}
+                                                                className="w-5 h-5 rounded border-neutral-600 bg-neutral-800 text-emerald-500 focus:ring-emerald-500 focus:ring-offset-neutral-900 transition-colors cursor-pointer appearance-none checked:bg-emerald-500 checked:border-emerald-500"
+                                                            />
+                                                            {currentValue && (
+                                                                <svg className="w-3.5 h-3.5 absolute text-white pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
+                                                            )}
+                                                        </div>
+                                                        <div className="flex flex-col">
+                                                            <span className="text-sm font-medium text-neutral-200 group-hover:text-emerald-400 transition-colors">{param.name}</span>
+                                                            {param.description && <span className="text-xs text-neutral-500">{param.description}</span>}
+                                                        </div>
+                                                    </label>
+                                                </div>
+                                            );
+                                        }
+
+                                        return (
+                                            <div key={param.id} className="space-y-2">
+                                                <label className="flex justify-between text-sm">
+                                                    <span>{param.name}</span>
+                                                    <span className="text-emerald-400 font-mono">
+                                                        {Number(currentValue).toFixed(1)}{param.unit}
+                                                    </span>
+                                                </label>
+                                                <input
+                                                    type="range"
+                                                    min={param.min}
+                                                    max={param.max}
+                                                    step={param.step}
+                                                    value={Number(currentValue)}
+                                                    onChange={e => handleDynamicParamChange(param.id, parseFloat(e.target.value))}
+                                                    className="w-full accent-emerald-500"
+                                                />
+                                                {param.description && <p className="text-xs text-neutral-500">{param.description}</p>}
+                                            </div>
+                                        );
+                                    })}
 
                                 {/* Cutter shape */}
                                 <div className="space-y-2">
@@ -485,15 +566,6 @@ function Generator() {
                                             <p className="text-xs text-neutral-500">Mínimo: {minCutterW.toFixed(0)} × {minCutterH.toFixed(0)} mm (arte + espaçamento)</p>
                                         </div>
                                     )}
-                                </div>
-
-                                <div className="space-y-2">
-                                    <label className="flex justify-between text-sm">
-                                        <span>Folga Carimbo/Cortador</span>
-                                        <span className="text-emerald-400 font-mono">{stampOffset.toFixed(1)}mm</span>
-                                    </label>
-                                    <input type="range" min="0" max="3" step="0.1" value={stampOffset} onChange={e => setStampOffset(parseFloat(e.target.value))} className="w-full accent-emerald-500" />
-                                    <p className="text-xs text-neutral-500">Distanciamento de segurança entre a base do carimbo e a parede do cortador para encaixe fluído.</p>
                                 </div>
                             </div>
 

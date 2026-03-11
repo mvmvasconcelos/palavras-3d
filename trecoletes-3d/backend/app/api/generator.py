@@ -3,14 +3,15 @@ import re
 import subprocess
 import tempfile
 import uuid
+import json
 from typing import List, Dict, Any
-from fastapi import APIRouter, UploadFile, Form, BackgroundTasks
+from fastapi import APIRouter, UploadFile, Form, BackgroundTasks, Request
 from fastapi.responses import JSONResponse
 from app.api._svg_normalize import normalize_svg_to_origin
 
 router = APIRouter()
 
-# /app/app/api/generator.py → go up 3 levels to reach container root /app
+# /app/app/api/generator.py → sobe 3 níveis para chegar à raiz do container /app
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 MODELS_DIR = os.path.join(BASE_DIR, "models")
 GENERATED_DIR = os.path.join(BASE_DIR, "static", "generated")
@@ -62,21 +63,32 @@ def normalize_svg_viewbox(svg_bytes: bytes) -> bytes:
 
         return text.encode('utf-8')
     except Exception:
-        return svg_bytes  # safe fallback
+        return svg_bytes  # fallback seguro
+
+@router.get("/models/{model_id}/config")
+async def get_model_config(model_id: str):
+    """
+    Retorna o config.json do modelo para que o frontend possa desenhar os controles
+    dinamicamente (Server-Driven UI).
+    """
+    config_path = os.path.join(MODELS_DIR, model_id, "config.json")
+    if not os.path.exists(config_path):
+        return JSONResponse(status_code=404, content={"error": "Configuração não encontrada"})
+    
+    with open(config_path, "r", encoding="utf-8") as f:
+        config_data = json.load(f)
+        
+    return config_data
 
 @router.post("/generate/{model_id}")
 async def generate_model(
+    request: Request,
     model_id: str,
     linhas_svg: UploadFile = Form(...),
     silhueta_svg: UploadFile = Form(...),
-    wall_thickness: float = Form(1.2),
     base_height: float = Form(2.0),
-    brim_width: float = Form(3.0),
-    folga: float = Form(1.0),
     art_width: float = Form(70.0),
     art_height: float = Form(70.0),
-    line_offset: float = Form(0.0),
-    silhouette_exp: float = Form(4.0),
     cutter_shape: str = Form("silhouette"),
     cutter_width: float = Form(80.0),
     cutter_height: float = Form(80.0)
@@ -110,23 +122,29 @@ async def generate_model(
     with open(silhueta_path, "wb") as f:
         f.write(await silhueta_svg.read())
 
-    # Generate the OpenSCAD command arguments
-    # We pass the absolute paths to the SVGs into the SCAD variables
+    # Lê os argumentos dinâmicos enviados pelo FormData
+    form_data = await request.form()
+    
+    # Gera os argumentos do OpenSCAD
+    # Passamos os caminhos absolutos dos SVGs para as variáveis do SCAD
     scad_variables = [
         "-D", f'svg_linhas_path="{linhas_path}"',
         "-D", f'svg_silhueta_path="{silhueta_path}"',
-        "-D", f'wall_thickness={wall_thickness}',
         "-D", f'base_height={base_height}',
-        "-D", f'brim_width={brim_width}',
-        "-D", f'folga={folga}',
         "-D", f'art_width={art_width}',
         "-D", f'art_height={art_height}',
-        "-D", f'line_offset={line_offset}',
-        "-D", f'silhouette_exp={silhouette_exp}',
         "-D", f'cutter_shape="{cutter_shape}"',
         "-D", f'cutter_width={cutter_width}',
         "-D", f'cutter_height={cutter_height}'
     ]
+
+    # Injeta automaticamente qualquer parâmetro dinâmico extra vindo do config.json
+    # Ignoramos chaves já processadas nativamente
+    native_keys = {"linhas_svg", "silhueta_svg", "base_height", "art_width", "art_height", "cutter_shape", "cutter_width", "cutter_height"}
+    for key, value in form_data.items():
+        if key not in native_keys and isinstance(value, str):
+            # Adiciona ao SCAD "-D key=value"
+            scad_variables.extend(["-D", f'{key}={value}'])
 
     parts_to_render = ["carimbo_base", "carimbo_arte", "cortador"]
     generated_urls = {}
