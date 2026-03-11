@@ -146,19 +146,21 @@ function Generator() {
     // Cutter shape
     type CutterShape = 'silhouette' | 'square' | 'circle' | 'rectangle' | 'hexagon';
     const [cutterShape, setCutterShape] = useState<CutterShape>('silhouette');
-    // User-adjustable dims for rectangle/hexagon (always >= art + 2*margin)
+    // User-adjustable dims for rectangle (always >= art + 2*margin)
     const [cutterW, setCutterW] = useState(78);
     const [cutterH, setCutterH] = useState(78);
     // Minimum allowed dims based on current art + margin
     const minCutterW = artWidth + silhouetteMargin * 2;
     const minCutterH = artHeight + silhouetteMargin * 2;
-    // Auto-computed for square/circle: max(art dim) + 2*margin
-    const autoSize = Math.max(artWidth, artHeight) + silhouetteMargin * 2;
+    // Auto-computed dims
+    const artDiag = Math.sqrt(artWidth * artWidth + artHeight * artHeight);
+    const autoSquareSize = Math.max(artWidth, artHeight) + silhouetteMargin * 2;
+    const autoCircleHexSize = artDiag + silhouetteMargin * 2;
+    const isAutoShape = cutterShape === 'square' || cutterShape === 'circle' || cutterShape === 'hexagon';
+    const autoSize = cutterShape === 'square' ? autoSquareSize : autoCircleHexSize;
     // Effective dims sent to backend
-    const effectiveCutterW = cutterShape === 'square' || cutterShape === 'circle'
-        ? autoSize : Math.max(cutterW, minCutterW);
-    const effectiveCutterH = cutterShape === 'square' || cutterShape === 'circle'
-        ? autoSize : Math.max(cutterH, minCutterH);
+    const effectiveCutterW = isAutoShape ? autoSize : Math.max(cutterW, minCutterW);
+    const effectiveCutterH = isAutoShape ? autoSize : Math.max(cutterH, minCutterH);
 
 
     const [svgPreview, setSvgPreview] = useState<{
@@ -440,15 +442,15 @@ function Generator() {
                                         <option value="hexagon">Hexágono</option>
                                     </select>
 
-                                    {/* Square / Circle: show auto-computed size (read-only) */}
-                                    {(cutterShape === 'square' || cutterShape === 'circle') && (
+                                    {/* Auto shapes: show computed size (read-only) */}
+                                    {isAutoShape && (
                                         <p className="text-xs text-emerald-500/80">
-                                            {cutterShape === 'circle' ? 'Diâmetro' : 'Lado'}: {autoSize.toFixed(1)} mm (auto)
+                                            {cutterShape === 'circle' ? 'Diâmetro' : cutterShape === 'hexagon' ? 'Largura (faces)' : 'Lado'}: {autoSize.toFixed(1)} mm (auto)
                                         </p>
                                     )}
 
-                                    {/* Rectangle / Hexagon: editable width + height with minimum */}
-                                    {(cutterShape === 'rectangle' || cutterShape === 'hexagon') && (
+                                    {/* Rectangle: editable width + height with minimum */}
+                                    {cutterShape === 'rectangle' && (
                                         <div className="space-y-2 pt-1">
                                             <div className="flex items-center gap-2">
                                                 <div className="flex-1 space-y-1">
