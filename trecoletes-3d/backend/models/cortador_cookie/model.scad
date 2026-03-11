@@ -1,58 +1,58 @@
-// Injected from Backend
+// Injetado pelo Backend
 svg_linhas_path   = "linhas.svg";
-svg_silhueta_path = "silhueta.svg";  // reserved, not used directly
+svg_silhueta_path = "silhueta.svg";  // reservado, não usado diretamente
 
-// Dimensions (injected by backend from UI)
-art_width  = 70.0;   // [mm] target artwork width
-art_height = 70.0;   // [mm] target artwork height
+// Dimensões (injetadas pelo backend a partir da UI)
+art_width  = 70.0;   // [mm] largura alvo da arte
+art_height = 70.0;   // [mm] altura alvo da arte
 
-// Heights and Config
+// Alturas e Configurações
 base_height    = 2.0;
 line_height    = 4.0;
 wall_height    = 15.0;
 brim_width     = 5.0;
 wall_thickness = 2.5;
-silhouette_exp = 4.0; // [mm] spacing between art boundary and silhouette edge
+silhouette_exp = 4.0; // [mm] espaçamento entre a borda da arte e a silhueta externa
 folga          = 2.0;
-line_offset    = 0.0; // [mm] expand artwork lines outward (stroke width effect)
+line_offset    = 0.0; // [mm] expande as linhas da arte para fora (efeito de espessura do traço)
 sharp_edge     = true;
-chamfer_height = 2.5; // Fixed height for the chamfer on top of the cutter
-cutter_rounding = 2.0; // [mm] rounding of the external corners of the cutter
+chamfer_height = 2.5; // Altura fixa para o chanfro no topo do cortador
+cutter_rounding = 2.0; // [mm] arredondamento dos cantos externos do cortador
 
-// Cutter shape: "silhouette" | "square" | "circle" | "rectangle" | "hexagon"
+// Formato do cortador: "silhouette" | "square" | "circle" | "rectangle" | "hexagon"
 cutter_shape  = "silhouette";
-cutter_width  = 80.0; // [mm] used by square/circle/rectangle/hexagon
-cutter_height = 80.0; // [mm] used by rectangle/hexagon
+cutter_width  = 80.0; // [mm] usado por quadrado/círculo/retângulo/hexágono
+cutter_height = 80.0; // [mm] usado por retângulo/hexágono
 
-// Art centre in OpenSCAD SCAD space after resize([art_width, art_height]).
-// Because svgProcessor.ts normalises the exported SVG to start at (0,0),
-// the content reliably spans (0,0)→(art_width, art_height), so the centre is
-// always at (art_width/2, art_height/2).  The backend may override these.
+// Centro da arte no espaço SCAD após resize([art_width, art_height]).
+// Como svgProcessor.ts normaliza o SVG exportado para começar em (0,0),
+// o conteúdo abrange de forma confiável de (0,0) → (art_width, art_height), então o centro
+// fica sempre em (art_width/2, art_height/2).  O backend pode substituir isso.
 art_center_x = art_width  / 2.0;
 art_center_y = art_height / 2.0;
 
 // ============================================================
-// art_svg: scales SVG to target mm size with optional line offset
+// art_svg: redimensiona o SVG para o tamanho em mm com offset opcional da linha
 // ============================================================
 module art_svg() {
-    // ── CENTERING DEBUG HISTORY ──────────────────────────────────
-    // The SVG from the frontend (paper.js) originally had viewBox much
-    // larger than content (e.g. "0 0 500 500" but paths at 90→410).
-    // OpenSCAD resize() scales from origin, so dead space scaled too,
-    // making the center NOT at (art_width/2, art_height/2).
+    // ── HISTÓRICO DE DEBUG DE CENTRALIZAÇÃO ──────────────────────
+    // O SVG do frontend (paper.js) originalmente tinha o viewBox muito
+    // maior que o conteúdo (ex: "0 0 500 500" mas as linhas em 90→410).
+    // O resize() do OpenSCAD redimensiona a partir da origem, então o espaço vazio
+    // também era redimensionado, tirando o centro de (art_width/2, art_height/2).
     //
-    // Attempt 1:  translate([-aw/2, +ah/2])   — WRONG (assumed Y-flip)
-    // Attempt 2:  translate([-aw/2, -ah/2])   — correct formula BUT
-    //             only works when SVG content starts at (0,0).
-    // Attempt 3:  Fixed svgProcessor.ts to translate each PathItem
-    //             individually (not the group).  Did NOT help because
-    //             paper.js exportSVG still emitted canvas-sized viewBox.
-    // Attempt 4 (current fix, 2026-03-09):
-    //   Backend normalize_svg_to_origin() in _svg_normalize.py now
-    //   parses SVG path data, finds true content bounds, adds
-    //   <g transform="translate(-minX,-minY)"> and sets viewBox to
-    //   "0 0 contentW contentH".  After this, resize() places art
-    //   reliably at (0,0)→(art_width, art_height).
+    // Tentativa 1:  translate([-aw/2, +ah/2])   — ERRADO (assumiu inversão de Y)
+    // Tentativa 2:  translate([-aw/2, -ah/2])   — fórmula correta MAS
+    //               só funciona quando o conteúdo do SVG começa em (0,0).
+    // Tentativa 3:  Correção no svgProcessor.ts para transladar cada PathItem
+    //               individualmente. NÃO ajudou porque o exportSVG do paper.js
+    //               ainda emitia o viewBox inteiro do tamanho do canvas.
+    // Tentativa 4 (correção atual, 09/03/2026):
+    //   A função normalize_svg_to_origin() do Backend (_svg_normalize.py)
+    //   analisa os dados do path do SVG, encontra os limites reais da arte,
+    //   adiciona o translate para começar de fato no zero (<g transform="translate(-mX,-mY)">)
+    //   e define o viewBox como "0 0 contentW contentH". Após isso, o resize() do SCAD
+    //   posiciona a arte perfeitamente de (0,0) → (art_width, art_height).
     // ─────────────────────────────────────────────────────────────
     translate([-art_width / 2, -art_height / 2]) {
         offset(r = line_offset) {
@@ -65,12 +65,12 @@ module art_svg() {
 
 
 // ============================================================
-// silhoueta_shape: organic silhouette from artwork
-// Uses morphological closing (expand→fill gaps→shrink) so the
-// result is a solid shape with no holes even for line-art SVGs.
-// fill_r must be > half the widest gap in the artwork.
+// silhoueta_shape: gera a silhueta orgânica a partir da arte
+// Usa fechamento morfológico (expande→preenche buracos→encolhe) para que o
+// resultado seja uma forma sólida sem vazados, mesmo para formatos de linhas de traço simples.
+// O fill_r precisa ser > do que a metade do maior buraco presente no desenho da arte.
 // ============================================================
-fill_r = 20; // [mm] large enough to bridge any gap in line art
+fill_r = 20; // [mm] raio grande o suficiente para emendar e preencher qualquer buraco na arte
 
 module silhoueta_shape(extra_r = 0) {
     offset(r = silhouette_exp + extra_r - fill_r) {
@@ -81,13 +81,13 @@ module silhoueta_shape(extra_r = 0) {
 }
 
 // ============================================================
-// main_outline: dispatches to the selected cutter shape.
-// All shapes are centred at (0,0) — same as art_svg() above.
-// extra_r adds uniform outward offset (wall thickness / brim).
+// main_outline: direciona para o formato escolhido do cortador.
+// Todas as formas são centralizadas em (0,0) — igual ao art_svg() acima.
+// extra_r adiciona um offset uniforme para fora (espessura da parede / brim).
 // ============================================================
 module main_outline(extra_r = 0) {
     if (cutter_shape == "silhouette" || cutter_shape == "") {
-        // silhouete_shape is derived from art_svg(), so it is also at (0,0).
+        // silhoueta_shape é derivado do art_svg(), portanto já está em (0,0).
         silhoueta_shape(extra_r);
     } else if (cutter_shape == "square") {
         s = cutter_width + extra_r * 2;
@@ -111,14 +111,19 @@ module main_outline(extra_r = 0) {
 }
 
 // ============================================================
-// Module: Carimbo
-//   - Base plate (main_outline shape)
-//   - Raised artwork on top
+// Módulo: Carimbo
+//   - Placa base (seguindo o formato e offset de main_outline)
+//   - Arte em alto relevo no topo
 // ============================================================
 module carimbo() {
     color("SlateGray")
-    linear_extrude(height = base_height) {
-        main_outline(extra_r = -folga);
+    difference() {
+        linear_extrude(height = base_height) {
+            main_outline(extra_r = -folga);
+        }
+        // Furo para o pegador (8mm diametro x 1mm profundidade, rente à mesa z=0)
+        translate([0, 0, -0.1])
+        cylinder(d = 8, h = 1.1, $fn = 64);
     }
 
     color("WhiteSmoke")
@@ -129,14 +134,14 @@ module carimbo() {
 }
 
 // ============================================================
-// Module: Cortador (Cookie Cutter)
-//   - Hollow wall following main_outline
-//   - Protective brim on top
+// Módulo: Cortador (Cookie Cutter)
+//   - Parede vazada acompanhando a geometria externa (main_outline)
+//   - Borda de proteção e apoio (brim) na base
 // ============================================================
 module cortador() {
     color("IndianRed")
     if (sharp_edge) {
-        // Flat wall up to the start of the chamfer
+        // Parede reta até a altura onde começa o chanfro da lâmina
         difference() {
             linear_extrude(height = wall_height - chamfer_height + 0.01) {
                 main_outline(extra_r = wall_thickness);
@@ -147,8 +152,8 @@ module cortador() {
             }
         }
         
-        // Chamfered top (stepped layers)
-        // Shrinks from wall_thickness to an almost sharp 0.4mm ridge
+        // Topo chanfrado (camadas em degraus - stepped layers)
+        // Reduz gradualmente da espessura bruta da parede até uma borda fina de 0.4mm
         translate([0, 0, wall_height - chamfer_height])
         for (i = [0 : 9]) {
             z = i * (chamfer_height / 10);
@@ -164,7 +169,7 @@ module cortador() {
             }
         }
     } else {
-        // Normal flat-top wall
+        // Parede com topo plano normal
         difference() {
             linear_extrude(height = wall_height) {
                 main_outline(extra_r = wall_thickness);
@@ -177,7 +182,7 @@ module cortador() {
     }
 
     color("FireBrick")
-    // Brim at the bottom (Z=0) so it prints on the bed without supports
+    // Borda de apoio (Brim) embaixo (Z=0) para grudar bem na mesa de impressão sem gerar suportes
     linear_extrude(height = 2.0) {
         difference() {
             main_outline(extra_r = wall_thickness + brim_width);
@@ -187,29 +192,38 @@ module cortador() {
 }
 
 // ============================================================
-// Render Control
-// Part: "all" | "carimbo" | "cortador" | "carimbo_base" | "carimbo_arte"
+// Controle de Renderização
+// Peça: "all" | "carimbo" | "cortador" | "carimbo_base" | "carimbo_arte"
 // ============================================================
 part = "all";
 
 if (part == "all") {
-    carimbo();
-    translate([200, 0, 0]) cortador();
+    mirror([1, 0, 0]) {
+        carimbo();
+        translate([200, 0, 0]) cortador();
+    }
 } else if (part == "carimbo") {
-    carimbo();
+    mirror([1, 0, 0]) carimbo();
 } else if (part == "cortador") {
-    cortador();
+    mirror([1, 0, 0]) cortador();
 } else if (part == "carimbo_base") {
-    color("SlateGray")
-    linear_extrude(height = base_height) {
-        offset(r = -folga) {
-            main_outline();
+    mirror([1, 0, 0]) {
+        color("SlateGray")
+        difference() {
+            linear_extrude(height = base_height) {
+                main_outline(extra_r = -folga);
+            }
+            // Furo para o pegador (8mm diametro x 1mm profundidade, rente à mesa z=0)
+            translate([0, 0, -0.1])
+            cylinder(d = 8, h = 1.1, $fn = 64);
         }
     }
 } else if (part == "carimbo_arte") {
-    color("WhiteSmoke")
-    translate([0, 0, base_height])
-    linear_extrude(height = line_height - base_height) {
-        art_svg();
+    mirror([1, 0, 0]) {
+        color("WhiteSmoke")
+        translate([0, 0, base_height])
+        linear_extrude(height = line_height - base_height) {
+            art_svg();
+        }
     }
 }
