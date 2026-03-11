@@ -7,7 +7,7 @@ art_width  = 70.0;   // [mm] largura alvo da arte
 art_height = 70.0;   // [mm] altura alvo da arte
 
 // Alturas e Configurações
-base_height    = 2.0;
+base_height    = 2.0; 
 line_height    = 4.0;
 wall_height    = 15.0;
 brim_width     = 5.0;
