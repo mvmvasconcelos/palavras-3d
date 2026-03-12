@@ -163,7 +163,11 @@ async def generate_model(
         
         try:
             # Run headless OpenSCAD in Docker
-            process = subprocess.run(cmd, check=True, capture_output=True, text=True)
+            # Define OPENSCAD_FONT_PATH so OpenSCAD can find local fonts (.ttf/.otf) next to the model
+            env = os.environ.copy()
+            env["OPENSCAD_FONT_PATH"] = os.path.join(MODELS_DIR, model_id)
+            
+            process = subprocess.run(cmd, check=True, capture_output=True, text=True, env=env)
             generated_urls[part] = f"/static/generated/{job_id}/{output_filename}"
         except subprocess.CalledProcessError as e:
             return JSONResponse(status_code=500, content={
