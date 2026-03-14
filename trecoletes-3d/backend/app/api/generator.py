@@ -5,6 +5,8 @@ import shutil
 import subprocess
 import time
 import json
+import uuid
+import zipfile
 import trimesh
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from fastapi import APIRouter, UploadFile, Form, Request
@@ -112,6 +114,227 @@ def normalize_svg_viewbox(svg_bytes: bytes) -> bytes:
         return text.encode('utf-8')
     except Exception:
         return svg_bytes  # fallback seguro
+
+# ---------------------------------------------------------------------------
+# Funções de geração de 3MF com metadados Bambu Studio
+# ---------------------------------------------------------------------------
+
+def _f3d(v: float) -> str:
+    """Formata um float para coordenadas 3MF (7 dígitos significativos)."""
+    return f"{v:.7g}"
+
+
+def _xml_object_1_model(meshes: list) -> bytes:
+    """Gera o conteúdo de 3D/Objects/object_1.model com todas as malhas."""
+    out = [
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        '<model unit="millimeter" xml:lang="en-US"'
+        ' xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02"'
+        ' xmlns:p="http://schemas.microsoft.com/3dmanufacturing/production/2015/06">',
+        ' <metadata name="BambuStudio:3mfVersion">1</metadata>',
+        ' <resources>',
+    ]
+    for obj_id, mesh in meshes:
+        verts = mesh.vertices
+        faces = mesh.faces
+        out.append(f'  <object id="{obj_id}" type="model">')
+        out.append('   <mesh>')
+        out.append('    <vertices>')
+        for v in verts:
+            out.append(f'     <vertex x="{_f3d(v[0])}" y="{_f3d(v[1])}" z="{_f3d(v[2])}"/>')
+        out.append('    </vertices>')
+        out.append('    <triangles>')
+        for f in faces:
+            out.append(f'     <triangle v1="{f[0]}" v2="{f[1]}" v3="{f[2]}"/>')
+        out.append('    </triangles>')
+        out.append('   </mesh>')
+        out.append('  </object>')
+    out.append(' </resources>')
+    out.append('</model>')
+    return '\n'.join(out).encode('utf-8')
+
+
+def _xml_3dmodel(part_cfgs: list) -> bytes:
+    """Gera o conteúdo de 3D/3dmodel.model (estrutura de montagem + build)."""
+    assembly_uuid = str(uuid.uuid4())
+    build_uuid    = str(uuid.uuid4())
+    item_uuid     = str(uuid.uuid4())
+    out = [
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        '<model unit="millimeter" xml:lang="en-US"'
+        ' xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02"'
+        ' xmlns:BambuStudio="http://schemas.bambulab.com/package/2021"'
+        ' xmlns:p="http://schemas.microsoft.com/3dmanufacturing/production/2015/06"'
+        ' requiredextensions="p">',
+        ' <metadata name="Application">BambuStudio-02.05.00.64</metadata>',
+        ' <metadata name="BambuStudio:3mfVersion">1</metadata>',
+        ' <resources>',
+        f'  <object id="4" p:UUID="{assembly_uuid}" type="model">',
+        '   <components>',
+    ]
+    for cfg in part_cfgs:
+        comp_uuid = str(uuid.uuid4())
+        out.append(
+            f'    <component p:path="/3D/Objects/object_1.model"'
+            f' objectid="{cfg["object_id"]}" p:UUID="{comp_uuid}"/>'
+        )
+    out += [
+        '   </components>',
+        '  </object>',
+        ' </resources>',
+        f' <build p:UUID="{build_uuid}">',
+        f'  <item objectid="4" p:UUID="{item_uuid}"'
+        '  transform="1 0 0 0 1 0 0 0 1 0 0 0" printable="1"/>',
+        ' </build>',
+        '</model>',
+    ]
+    return '\n'.join(out).encode('utf-8')
+
+
+def _xml_model_settings(part_cfgs: list, total_faces: int) -> bytes:
+    """Gera o conteúdo de Metadata/model_settings.config."""
+    obj_extruder = part_cfgs[0]['extruder'] if part_cfgs else 1
+    out = [
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        '<config>',
+        '  <object id="4">',
+        '    <metadata key="name" value="cortador_cookie_all"/>',
+        f'    <metadata key="extruder" value="{obj_extruder}"/>',
+        f'    <metadata face_count="{total_faces}"/>',
+    ]
+    for cfg in part_cfgs:
+        z_off = _f3d(cfg['z_offset'])
+        matrix = f'1 0 0 0 0 1 0 0 0 0 1 {z_off} 0 0 0 1'
+        src_z  = _f3d(cfg['source_offset_z'])
+        out += [
+            f'    <part id="{cfg["object_id"]}" subtype="normal_part">',
+            f'      <metadata key="name" value="{cfg["display_name"]}"/>',
+            f'      <metadata key="extruder" value="{cfg["extruder"]}"/>',
+            f'      <metadata key="matrix" value="{matrix}"/>',
+            f'      <metadata key="source_file" value="cortador_cookie_all.3mf"/>',
+            f'      <metadata key="source_object_id" value="{cfg["object_id"] - 1}"/>',
+            f'      <metadata key="source_volume_id" value="0"/>',
+            f'      <metadata key="source_offset_x" value="0"/>',
+            f'      <metadata key="source_offset_y" value="0"/>',
+            f'      <metadata key="source_offset_z" value="{src_z}"/>',
+            f'      <mesh_stat face_count="{cfg["face_count"]}"'
+            '  edges_fixed="0" degenerate_facets="0"'
+            '  facets_removed="0" facets_reversed="0" backwards_edges="0"/>',
+            '    </part>',
+        ]
+    out += [
+        '  </object>',
+        '  <plate>',
+        '    <metadata key="plater_id" value="1"/>',
+        '    <metadata key="plater_name" value=""/>',
+        '    <metadata key="locked" value="false"/>',
+        '    <metadata key="filament_map_mode" value="Auto For Flush"/>',
+        '    <metadata key="filament_maps" value="1 1 1 1 1"/>',
+        '    <metadata key="filament_volume_maps" value="0 0 0 0 0"/>',
+        '    <model_instance>',
+        '      <metadata key="object_id" value="4"/>',
+        '      <metadata key="instance_id" value="0"/>',
+        '    </model_instance>',
+        '  </plate>',
+        '  <assemble>',
+        '   <assemble_item object_id="4" instance_id="0"'
+        '  transform="1 0 0 0 1 0 0 0 1 0 0 0" offset="0 0 0" />',
+        '  </assemble>',
+        '</config>',
+    ]
+    return '\n'.join(out).encode('utf-8')
+
+
+def _pack_bambu_3mf(
+    model_id: str,
+    parts_to_render: list,
+    job_dir: str,
+    mf_filepath: str,
+) -> bool:
+    """
+    Cria um 3MF com metadados completos do Bambu Studio se existir
+    models/<model_id>/bambu_template/.
+    Retorna True em caso de sucesso; False faz o chamador recorrer ao
+    fallback via trimesh.
+    """
+    template_dir = os.path.join(MODELS_DIR, model_id, 'bambu_template')
+    if not os.path.isdir(template_dir):
+        return False
+
+    parts_cfg_path = os.path.join(template_dir, 'bambu_parts_config.json')
+    if not os.path.exists(parts_cfg_path):
+        return False
+
+    with open(parts_cfg_path, 'r', encoding='utf-8') as fh:
+        bambu_cfg = json.load(fh)
+    part_defs = {p['scad_name']: p for p in bambu_cfg['parts']}
+
+    # --- Carrega malhas ---
+    meshes_raw: dict = {}
+    for part in parts_to_render:
+        stl_path = os.path.join(job_dir, f'{model_id}_{part}.stl')
+        if not os.path.exists(stl_path):
+            print(f'[BAMBU] STL não encontrado: {stl_path}', flush=True)
+            return False
+        loaded = trimesh.load(stl_path)
+        if isinstance(loaded, trimesh.Scene):
+            mesh = trimesh.util.concatenate(list(loaded.geometry.values()))
+        else:
+            mesh = loaded
+        meshes_raw[part] = mesh
+
+    # --- Normaliza Z: apoia todo o conjunto no plano Z=0 ---
+    global_z_min = min(float(m.bounds[0][2]) for m in meshes_raw.values())
+    for m in meshes_raw.values():
+        m.apply_translation([0.0, 0.0, -global_z_min])
+
+    # --- Monta configurações por parte ---
+    part_cfgs = []
+    total_faces = 0
+    for idx, part in enumerate(parts_to_render):
+        mesh = meshes_raw[part]
+        defn = part_defs.get(part, {})
+        face_count = len(mesh.faces)
+        total_faces += face_count
+        part_cfgs.append({
+            'object_id':      idx + 1,
+            'scad_name':      part,
+            'display_name':   defn.get('display_name', part),
+            'extruder':       defn.get('extruder', 1),
+            'face_count':     face_count,
+            'z_offset':       0.0,
+            'source_offset_z': float(mesh.bounds[0][2]),
+            'mesh':           mesh,
+        })
+
+    # --- Gera XMLs dinâmicos ---
+    obj1_xml     = _xml_object_1_model([(c['object_id'], c['mesh']) for c in part_cfgs])
+    model3d_xml  = _xml_3dmodel(part_cfgs)
+    settings_xml = _xml_model_settings(part_cfgs, total_faces)
+
+    # --- Empacota o ZIP (.3mf) ---
+    static_dir = os.path.join(template_dir, 'static')
+    try:
+        with zipfile.ZipFile(mf_filepath, 'w', zipfile.ZIP_DEFLATED) as zf:
+            # Arquivos estáticos do template
+            if os.path.isdir(static_dir):
+                for root, _dirs, files in os.walk(static_dir):
+                    for fname in files:
+                        abs_path = os.path.join(root, fname)
+                        arc_path = os.path.relpath(abs_path, static_dir).replace('\\', '/')
+                        zf.write(abs_path, arc_path)
+            # Arquivos dinâmicos (gerados por job)
+            zf.writestr('3D/Objects/object_1.model', obj1_xml)
+            zf.writestr('3D/3dmodel.model', model3d_xml)
+            zf.writestr('Metadata/model_settings.config', settings_xml)
+        print(f'[BAMBU] 3MF Bambu Studio gerado: {mf_filepath}', flush=True)
+        return True
+    except Exception as e:
+        print(f'[BAMBU] Erro ao empacotar 3MF: {repr(e)}', flush=True)
+        if os.path.exists(mf_filepath):
+            os.remove(mf_filepath)
+        return False
+
 
 @router.get("/models/{model_id}/config")
 async def get_model_config(model_id: str):
@@ -246,38 +469,40 @@ async def generate_model(
         print(f"[ERROR] Falha na renderização: {errors}", flush=True)
         return JSONResponse(status_code=500, content={"error": "OpenSCAD falhou", "details": errors})
 
-    # Generate proper Multi-Object 3MF
-    try:
-        meshes = []
-        color_map = {
-            "carimbo_base": [100, 100, 255, 255],
-            "carimbo_arte": [255, 100, 100, 255],
-            "cortador": [100, 255, 100, 255]
-        }
-        name_map = {
-            "carimbo_base": "Base do Carimbo",
-            "carimbo_arte": "Arte do Carimbo",
-            "cortador": "Cortador"
-        }
-        
-        for part in parts_to_render:
-            stl_path = os.path.join(job_dir, f"{model_id}_{part}.stl")
-            if os.path.exists(stl_path):
-                loaded = trimesh.load(stl_path)
-                # trimesh.load pode retornar Scene (multi-body) ou Trimesh
-                if isinstance(loaded, trimesh.Scene):
-                    mesh = trimesh.util.concatenate(list(loaded.geometry.values()))
-                else:
-                    mesh = loaded
-                mesh.metadata['name'] = name_map.get(part, part)
-                mesh.visual.face_colors = color_map.get(part, [200, 200, 200, 255])
-                meshes.append(mesh)
-                
-        if meshes:
-            scene = trimesh.Scene(meshes)
-            scene.export(mf_filepath, file_type='3mf')
-            generated_urls["3mf"] = f"/static/generated/{job_id}/{mf_filename}"
-    except Exception as e:
-        print(f"Error packing 3MF via trimesh: {repr(e)}")
+    # --- Monta 3MF: tenta Bambu Studio primeiro, cai no trimesh como fallback ---
+    bambu_ok = _pack_bambu_3mf(model_id, parts_to_render, job_dir, mf_filepath)
+    if bambu_ok:
+        generated_urls["3mf"] = f"/static/generated/{job_id}/{mf_filename}"
+    else:
+        # Fallback: exporta via trimesh (sem metadados Bambu Studio)
+        try:
+            meshes = []
+            color_map = {
+                "carimbo_base": [100, 100, 255, 255],
+                "carimbo_arte": [255, 100, 100, 255],
+                "cortador":     [100, 255, 100, 255],
+            }
+            name_map = {
+                "carimbo_base": "Base do Carimbo",
+                "carimbo_arte": "Arte do Carimbo",
+                "cortador":     "Cortador",
+            }
+            for part in parts_to_render:
+                stl_path = os.path.join(job_dir, f"{model_id}_{part}.stl")
+                if os.path.exists(stl_path):
+                    loaded = trimesh.load(stl_path)
+                    if isinstance(loaded, trimesh.Scene):
+                        mesh = trimesh.util.concatenate(list(loaded.geometry.values()))
+                    else:
+                        mesh = loaded
+                    mesh.metadata['name'] = name_map.get(part, part)
+                    mesh.visual.face_colors = color_map.get(part, [200, 200, 200, 255])
+                    meshes.append(mesh)
+            if meshes:
+                scene = trimesh.Scene(meshes)
+                scene.export(mf_filepath, file_type='3mf')
+                generated_urls["3mf"] = f"/static/generated/{job_id}/{mf_filename}"
+        except Exception as e:
+            print(f"[FALLBACK] Erro ao exportar 3MF via trimesh: {repr(e)}")
 
     return {"success": True, "job_id": job_id, "files": generated_urls}
