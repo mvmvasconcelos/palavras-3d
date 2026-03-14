@@ -191,14 +191,14 @@ def _xml_3dmodel(part_cfgs: list) -> bytes:
     return '\n'.join(out).encode('utf-8')
 
 
-def _xml_model_settings(part_cfgs: list, total_faces: int) -> bytes:
+def _xml_model_settings(part_cfgs: list, total_faces: int, model_id: str = "model") -> bytes:
     """Gera o conteúdo de Metadata/model_settings.config."""
     obj_extruder = part_cfgs[0]['extruder'] if part_cfgs else 1
     out = [
         '<?xml version="1.0" encoding="UTF-8"?>',
         '<config>',
         '  <object id="4">',
-        '    <metadata key="name" value="cortador_cookie_all"/>',
+        f'    <metadata key="name" value="{model_id}_all"/>',
         f'    <metadata key="extruder" value="{obj_extruder}"/>',
         f'    <metadata face_count="{total_faces}"/>',
     ]
@@ -211,7 +211,7 @@ def _xml_model_settings(part_cfgs: list, total_faces: int) -> bytes:
             f'      <metadata key="name" value="{cfg["display_name"]}"/>',
             f'      <metadata key="extruder" value="{cfg["extruder"]}"/>',
             f'      <metadata key="matrix" value="{matrix}"/>',
-            f'      <metadata key="source_file" value="cortador_cookie_all.3mf"/>',
+            f'      <metadata key="source_file" value="{model_id}_all.3mf"/>',
             f'      <metadata key="source_object_id" value="{cfg["object_id"] - 1}"/>',
             f'      <metadata key="source_volume_id" value="0"/>',
             f'      <metadata key="source_offset_x" value="0"/>',
@@ -310,7 +310,7 @@ def _pack_bambu_3mf(
     # --- Gera XMLs dinâmicos ---
     obj1_xml     = _xml_object_1_model([(c['object_id'], c['mesh']) for c in part_cfgs])
     model3d_xml  = _xml_3dmodel(part_cfgs)
-    settings_xml = _xml_model_settings(part_cfgs, total_faces)
+    settings_xml = _xml_model_settings(part_cfgs, total_faces, model_id)
 
     # --- Empacota o ZIP (.3mf) ---
     static_dir = os.path.join(template_dir, 'static')
@@ -506,3 +506,170 @@ async def generate_model(
             print(f"[FALLBACK] Erro ao exportar 3MF via trimesh: {repr(e)}")
 
     return {"success": True, "job_id": job_id, "files": generated_urls}
+
+
+@router.post("/generate_parametric/{model_id}")
+async def generate_parametric_model(request: Request, model_id: str):
+    """
+    Endpoint genérico para modelos paramétricos (sem upload de SVG).
+    Recebe apenas form data com os parâmetros do modelo.
+    Se o config.json declarar output_format="3mf" e parts=[...],
+    renderiza múltiplas partes em paralelo e monta um 3MF multicolor.
+    Caso contrário, retorna um único STL.
+    """
+    scad_path = os.path.join(MODELS_DIR, model_id, "model.scad")
+    if not os.path.exists(scad_path):
+        return JSONResponse(status_code=404, content={"error": "Model not found"})
+
+    # Lê config.json para identificar output_format e partes do modelo
+    config_path = os.path.join(MODELS_DIR, model_id, "config.json")
+    model_config = {}
+    if os.path.exists(config_path):
+        with open(config_path, "r", encoding="utf-8") as f:
+            model_config = json.load(f)
+
+    output_format = model_config.get("output_format", "stl")
+    parts_to_render = model_config.get("parts")  # lista ou None
+
+    form_data = await request.form()
+    text_params = sorted(
+        (k, v) for k, v in form_data.items()
+        if isinstance(v, str)
+    )
+
+    # Hash determinístico para cache
+    hasher = hashlib.md5()
+    hasher.update(model_id.encode())
+    for k, v in text_params:
+        hasher.update(f"{k}={v}".encode())
+    job_id = hasher.hexdigest()[:16]
+
+    job_dir = os.path.join(GENERATED_DIR, job_id)
+    font_path = os.path.join(MODELS_DIR, model_id)
+
+    # ── Fluxo multipart 3MF ───────────────────────────────────────────────
+    if output_format == "3mf" and parts_to_render:
+        mf_filename = f"{model_id}_all.3mf"
+        mf_filepath = os.path.join(job_dir, mf_filename)
+
+        if os.path.exists(mf_filepath):
+            print(f"[CACHE HIT parametric 3mf] job_id={job_id}", flush=True)
+            cached_urls = {p: f"/static/generated/{job_id}/{model_id}_{p}.stl" for p in parts_to_render}
+            cached_urls["3mf"] = f"/static/generated/{job_id}/{mf_filename}"
+            return {"success": True, "job_id": job_id, "files": cached_urls}
+
+        _cleanup_old_jobs()
+        os.makedirs(job_dir, exist_ok=True)
+
+        scad_args_base = []
+        for key, value in text_params:
+            scad_args_base.extend(["-D", _to_scad_assignment(key, value)])
+
+        def render_part(part: str) -> tuple:
+            output_filename = f"{model_id}_{part}.stl"
+            output_path = os.path.join(job_dir, output_filename)
+            if os.path.exists(output_path):
+                return part, output_path
+            cmd = [
+                "openscad", "-o", output_path,
+                *scad_args_base,
+                "-D", f'part="{part}"',
+                scad_path,
+            ]
+            env = os.environ.copy()
+            env["OPENSCAD_FONT_PATH"] = font_path
+            try:
+                subprocess.run(cmd, check=True, capture_output=True, text=True,
+                               env=env, timeout=OPENSCAD_TIMEOUT)
+                return part, output_path
+            except subprocess.TimeoutExpired:
+                return part, TimeoutError(f"OpenSCAD timeout ({OPENSCAD_TIMEOUT}s) na parte '{part}'")
+            except subprocess.CalledProcessError as e:
+                return part, RuntimeError(e.stderr)
+            except Exception as e:
+                return part, RuntimeError(repr(e))
+
+        generated_urls = {}
+        errors = {}
+        with ThreadPoolExecutor(max_workers=len(parts_to_render)) as pool:
+            futures = {pool.submit(render_part, p): p for p in parts_to_render}
+            for future in as_completed(futures):
+                part, result = future.result()
+                if isinstance(result, Exception):
+                    errors[part] = str(result)
+                else:
+                    generated_urls[part] = f"/static/generated/{job_id}/{model_id}_{part}.stl"
+
+        if errors:
+            print(f"[PARAMETRIC 3MF ERROR] {errors}", flush=True)
+            return JSONResponse(status_code=500, content={"error": "OpenSCAD falhou", "details": errors})
+
+        bambu_ok = _pack_bambu_3mf(model_id, parts_to_render, job_dir, mf_filepath)
+        if bambu_ok:
+            generated_urls["3mf"] = f"/static/generated/{job_id}/{mf_filename}"
+        else:
+            try:
+                meshes = []
+                for part in parts_to_render:
+                    stl_path = os.path.join(job_dir, f"{model_id}_{part}.stl")
+                    if os.path.exists(stl_path):
+                        loaded = trimesh.load(stl_path)
+                        mesh = (trimesh.util.concatenate(list(loaded.geometry.values()))
+                                if isinstance(loaded, trimesh.Scene) else loaded)
+                        meshes.append(mesh)
+                if meshes:
+                    trimesh.Scene(meshes).export(mf_filepath, file_type='3mf')
+                    generated_urls["3mf"] = f"/static/generated/{job_id}/{mf_filename}"
+            except Exception as e:
+                print(f"[PARAMETRIC FALLBACK] Erro ao exportar 3MF via trimesh: {repr(e)}")
+
+        return {"success": True, "job_id": job_id, "files": generated_urls}
+
+    # ── Fluxo STL único (original) ────────────────────────────────────────
+    output_filename = f"{model_id}.stl"
+    output_path = os.path.join(job_dir, output_filename)
+
+    if os.path.exists(output_path):
+        print(f"[CACHE HIT parametric] job_id={job_id}", flush=True)
+        return {
+            "success": True,
+            "job_id": job_id,
+            "files": {"model": f"/static/generated/{job_id}/{output_filename}"},
+        }
+
+    _cleanup_old_jobs()
+    os.makedirs(job_dir, exist_ok=True)
+
+    scad_args = []
+    for key, value in text_params:
+        scad_args.extend(["-D", _to_scad_assignment(key, value)])
+
+    cmd = ["openscad", "-o", output_path, *scad_args, scad_path]
+    env = os.environ.copy()
+    env["OPENSCAD_FONT_PATH"] = font_path
+
+    try:
+        result = subprocess.run(
+            cmd, check=True, capture_output=True, text=True,
+            env=env, timeout=OPENSCAD_TIMEOUT,
+        )
+        print(f"[PARAMETRIC] Gerado: {output_path}", flush=True)
+    except subprocess.TimeoutExpired:
+        return JSONResponse(
+            status_code=500,
+            content={"error": f"OpenSCAD timeout ({OPENSCAD_TIMEOUT}s)"},
+        )
+    except subprocess.CalledProcessError as e:
+        print(f"[PARAMETRIC ERROR] {e.stderr}", flush=True)
+        return JSONResponse(
+            status_code=500,
+            content={"error": "OpenSCAD falhou", "details": e.stderr},
+        )
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": repr(e)})
+
+    return {
+        "success": True,
+        "job_id": job_id,
+        "files": {"model": f"/static/generated/{job_id}/{output_filename}"},
+    }

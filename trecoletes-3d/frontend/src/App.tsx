@@ -1,9 +1,20 @@
 import React, { useState, useRef } from 'react';
 import Viewer3D from './Viewer3D';
-import { Upload, Sliders, Scissors, Home, ChevronRight } from 'lucide-react';
+import { Upload, Sliders, Scissors, Home, ChevronRight, ChevronDown, Type } from 'lucide-react';
 import { processSvgFile } from './svgProcessor';
 import axios from 'axios';
 import { BrowserRouter, Routes, Route, Link } from 'react-router-dom';
+
+async function downloadBlob(url: string, filename: string) {
+    const res = await fetch(url);
+    const blob = await res.blob();
+    const blobUrl = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = blobUrl;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(blobUrl);
+}
 
 function SvgPreviewModal({
     isOpen,
@@ -634,18 +645,453 @@ function Generator() {
                     </div>
                     {tmfUrl && (
                         <div className="flex-shrink-0 flex justify-center">
-                            <a
-                                href={tmfUrl}
-                                download
+                            <button
+                                onClick={() => downloadBlob(tmfUrl, 'cortador_cookie_all.3mf')}
                                 className="flex items-center gap-2 px-6 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold rounded-lg shadow-lg shadow-emerald-900/40 transition-colors text-sm"
                             >
                                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
                                 Baixar 3MF Multicolor
-                            </a>
+                            </button>
                         </div>
                     )}
                 </section>
 
+            </main>
+        </div>
+    );
+}
+
+function TestHolesVertical() {
+    const [holes, setHoles] = React.useState<number[]>([5, 5.2]);
+    const [margin, setMargin] = React.useState(2);
+    const [isGenerating, setIsGenerating] = React.useState(false);
+    const [modelUrl, setModelUrl] = React.useState<string | null>(null);
+
+    // Carrega defaults do config.json via API
+    React.useEffect(() => {
+        axios.get('http://localhost:8000/api/models/test_holes_vertical/config')
+            .then(res => {
+                const params: any[] = res.data?.parameters ?? [];
+                params.forEach((p: any) => {
+                    if (p.id === 'holes' && Array.isArray(p.default)) setHoles(p.default);
+                    if (p.id === 'margin') setMargin(Number(p.default));
+                });
+            })
+            .catch(() => { /* mantém defaults hardcoded */ });
+    }, []);
+    const [error, setError] = React.useState<string | null>(null);
+
+    // Dimensões calculadas em tempo real
+    const maxD = holes.length > 0 ? Math.max(...holes) : 0;
+    const sumD = holes.reduce((s, v) => s + v, 0);
+    const dimW = sumD + margin * (holes.length + 1);  // X variável
+    const dimD = 15;                                   // Y fixo
+    const dimH = maxD + margin * 2;                    // Z = maior furo + margens
+
+    const addHole = () => setHoles(prev => [...prev, 5]);
+    const removeHole = (i: number) => setHoles(prev => prev.filter((_, idx) => idx !== i));
+    const updateHole = (i: number, val: number) =>
+        setHoles(prev => prev.map((v, idx) => (idx === i ? val : v)));
+
+    const handleGenerate = async () => {
+        if (holes.length === 0) return;
+        setIsGenerating(true);
+        setError(null);
+        setModelUrl(null);
+        try {
+            const form = new FormData();
+            form.append('holes', `[${holes.join(', ')}]`);
+            form.append('margin', String(margin));
+            const res = await axios.post(
+                'http://localhost:8000/api/generate_parametric/test_holes_vertical',
+                form,
+            );
+            if (res.data?.files?.model) {
+                setModelUrl(`http://localhost:8000${res.data.files.model}`);
+            }
+        } catch (err: any) {
+            setError(err?.response?.data?.error ?? 'Erro desconhecido');
+        } finally {
+            setIsGenerating(false);
+        }
+    };
+
+    return (
+        <div className="min-h-screen bg-neutral-900 text-neutral-200 flex flex-col font-sans">
+            {/* Header */}
+            <header className="flex items-center gap-4 px-6 py-4 bg-neutral-950 border-b border-neutral-800">
+                <Link to="/" className="text-neutral-500 hover:text-amber-400 transition-colors">
+                    <Home className="w-5 h-5" />
+                </Link>
+                <ChevronRight className="w-4 h-4 text-neutral-700" />
+                <div className="flex items-center gap-2 text-amber-500 font-bold tracking-wide">
+                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                        <rect x="5" y="2" width="14" height="20" rx="2" />
+                        <circle cx="12" cy="8" r="2" />
+                        <circle cx="12" cy="16" r="2" />
+                    </svg>
+                    Teste de Furos Verticais
+                </div>
+            </header>
+
+            <main className="flex flex-1 min-h-0 overflow-hidden">
+                {/* Sidebar */}
+                <aside className="w-80 flex-shrink-0 bg-neutral-950 border-r border-neutral-800 flex flex-col overflow-y-auto">
+                    <div className="p-4 space-y-6 flex-1">
+
+                        {/* Furos */}
+                        <div className="space-y-3">
+                            <h2 className="text-sm font-semibold text-neutral-400 uppercase tracking-widest flex items-center gap-2">
+                                <Sliders className="w-4 h-4" /> Furos a testar
+                            </h2>
+                            <p className="text-xs text-neutral-500">Cada furo adiciona (⌀ + 2×margem) à altura e profundidade da peça.</p>
+
+                            <div className="space-y-2">
+                                {holes.map((d, i) => (
+                                    <div key={i} className="flex items-center gap-2">
+                                        <span className="text-xs text-neutral-600 w-4 text-right">{i + 1}.</span>
+                                        <input
+                                            type="number"
+                                            min={1}
+                                            max={13}
+                                            step={0.1}
+                                            value={d}
+                                            onChange={e => updateHole(i, parseFloat(e.target.value) || 1)}
+                                            className="flex-1 bg-neutral-800 border border-neutral-700 rounded px-2 py-1.5 text-sm text-white focus:border-amber-500 focus:outline-none"
+                                        />
+                                        <span className="text-xs text-neutral-500">mm</span>
+                                        <button
+                                            onClick={() => removeHole(i)}
+                                            disabled={holes.length <= 1}
+                                            className="text-neutral-600 hover:text-red-400 transition-colors disabled:opacity-30"
+                                            title="Remover furo"
+                                        >
+                                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
+
+                            <button
+                                onClick={addHole}
+                                className="w-full py-2 rounded-lg border border-dashed border-neutral-700 hover:border-amber-500 text-neutral-500 hover:text-amber-400 text-sm transition-colors"
+                            >
+                                + Adicionar furo
+                            </button>
+                        </div>
+
+                        {/* Margem */}
+                        <div className="space-y-2">
+                            <label className="flex justify-between text-sm">
+                                <span>Margem</span>
+                                <span className="text-amber-400 font-mono">{margin.toFixed(1)} mm</span>
+                            </label>
+                            <input
+                                type="range"
+                                min={1} max={5} step={0.5}
+                                value={margin}
+                                onChange={e => setMargin(parseFloat(e.target.value))}
+                                className="w-full accent-amber-500"
+                            />
+                        </div>
+
+                        {/* Dimensões calculadas */}
+                        <div className="bg-neutral-900 border border-neutral-800 rounded-lg p-3 space-y-1.5">
+                            <h3 className="text-xs font-semibold text-neutral-400 uppercase tracking-widest mb-2">Dimensões calculadas</h3>
+                            {[
+                                { label: 'Largura (X)', value: dimW },
+                                { label: 'Profundidade (Y)', value: dimD },
+                                { label: 'Altura (Z)', value: dimH },
+                            ].map(({ label, value }) => (
+                                <div key={label} className="flex justify-between text-sm">
+                                    <span className="text-neutral-500">{label}</span>
+                                    <span className="text-amber-300 font-mono">{value.toFixed(1)} mm</span>
+                                </div>
+                            ))}
+                        </div>
+
+                        {error && (
+                            <div className="bg-red-950 border border-red-800 rounded-lg p-3 text-sm text-red-300">
+                                {error}
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Generate button */}
+                    <div className="p-4 border-t border-neutral-800 bg-neutral-950">
+                        <button
+                            onClick={handleGenerate}
+                            disabled={holes.length === 0 || isGenerating}
+                            className="w-full py-3 bg-amber-600 hover:bg-amber-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold rounded shadow-lg shadow-amber-500/20 transition-all"
+                        >
+                            {isGenerating ? 'Gerando...' : 'Gerar STL'}
+                        </button>
+                    </div>
+                </aside>
+
+                {/* Viewer */}
+                <section className="flex-1 p-4 relative min-w-0 min-h-0 flex flex-col gap-3">
+                    <div className="flex-1 relative min-h-0">
+                        <div className="absolute inset-0">
+                            <Viewer3D
+                                carimbBaseUrl={modelUrl}
+                                carimbArteUrl={null}
+                                cortadorUrl={null}
+                                isGenerating={isGenerating}
+                                artColor="#f5f0e8"
+                                modelColor="#f59e0b"
+                            />
+                        </div>
+                    </div>
+                    {modelUrl && (
+                        <div className="flex-shrink-0 flex justify-center">
+                            <button
+                                onClick={() => downloadBlob(modelUrl, 'test_holes_vertical.stl')}
+                                className="flex items-center gap-2 px-6 py-2.5 bg-amber-600 hover:bg-amber-500 text-white font-semibold rounded-lg shadow-lg shadow-amber-900/40 transition-colors text-sm"
+                            >
+                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                                Baixar STL
+                            </button>
+                        </div>
+                    )}
+                </section>
+            </main>
+        </div>
+    );
+}
+
+function NameTopper() {
+    const [config, setConfig] = React.useState<any>(null);
+    const [params, setParams] = React.useState<Record<string, any>>({});
+    const [isGenerating, setIsGenerating] = React.useState(false);
+    const [baseUrl, setBaseUrl] = React.useState<string | null>(null);
+    const [lettersUrl, setLettersUrl] = React.useState<string | null>(null);
+    const [tmfUrl, setTmfUrl] = React.useState<string | null>(null);
+    const [error, setError] = React.useState<string | null>(null);
+    // Controla quais seções estão abertas (abertas por padrão: Linha 2 e Ajustes Finos fechadas)
+    const [openSections, setOpenSections] = React.useState<Record<string, boolean>>({});
+
+    React.useEffect(() => {
+        axios.get('http://localhost:8000/api/models/name_topper/config')
+            .then(res => {
+                const cfg = res.data;
+                setConfig(cfg);
+                const initial: Record<string, any> = {};
+                const setDefaults = (list: any[]) => list?.forEach((p: any) => { initial[p.id] = p.default; });
+                setDefaults(cfg.parameters);
+                cfg.sections?.forEach((s: any) => setDefaults(s.parameters));
+                setParams(initial);
+                // Define estado inicial dos acordeões
+                const initOpen: Record<string, boolean> = {};
+                cfg.sections?.forEach((s: any) => {
+                    // "Linha 2" começa fechada; demais abertas
+                    initOpen[s.name] = !s.name.includes('Linha 2');
+                });
+                setOpenSections(initOpen);
+            })
+            .catch(() => {});
+    }, []);
+
+    const toggleSection = (name: string) =>
+        setOpenSections(prev => ({ ...prev, [name]: !prev[name] }));
+
+    const setParam = (id: string, val: any) => setParams(prev => ({ ...prev, [id]: val }));
+
+    const handleGenerate = async () => {
+        setIsGenerating(true);
+        setError(null);
+        setBaseUrl(null);
+        setLettersUrl(null);
+        setTmfUrl(null);
+        try {
+            const form = new FormData();
+            Object.entries(params).forEach(([k, v]) => form.append(k, String(v ?? '')));
+            const res = await axios.post('http://localhost:8000/api/generate_parametric/name_topper', form);
+            if (res.data?.files) {
+                const host = 'http://localhost:8000';
+                if (res.data.files.base)    setBaseUrl(`${host}${res.data.files.base}`);
+                if (res.data.files.letters) setLettersUrl(`${host}${res.data.files.letters}`);
+                if (res.data.files['3mf'])  setTmfUrl(`${host}${res.data.files['3mf']}`);
+            }
+        } catch (err: any) {
+            setError(err?.response?.data?.error ?? 'Erro desconhecido');
+        } finally {
+            setIsGenerating(false);
+        }
+    };
+
+    const renderParam = (p: any) => {
+        const val = params[p.id] ?? p.default;
+        switch (p.type) {
+            case 'text':
+                return (
+                    <div key={p.id} className="space-y-1">
+                        <label className="text-sm text-neutral-400">{p.name}</label>
+                        <input
+                            type="text" value={val} placeholder={p.placeholder ?? ''}
+                            onChange={e => setParam(p.id, e.target.value)}
+                            className="w-full bg-neutral-800 border border-neutral-700 rounded px-3 py-2 text-sm text-white focus:border-violet-500 focus:outline-none"
+                        />
+                    </div>
+                );
+            case 'range':
+                return (
+                    <div key={p.id} className="space-y-1">
+                        <label className="flex justify-between text-sm">
+                            <span className="text-neutral-400">{p.name}</span>
+                            <span className="text-violet-400 font-mono">
+                                {Number(val).toFixed(p.step < 1 ? 1 : 0)}{p.unit ? ` ${p.unit}` : ''}
+                            </span>
+                        </label>
+                        <input
+                            type="range" min={p.min} max={p.max} step={p.step} value={val}
+                            onChange={e => setParam(p.id, parseFloat(e.target.value))}
+                            className="w-full accent-violet-500"
+                        />
+                    </div>
+                );
+            case 'color':
+                return (
+                    <div key={p.id} className="flex items-center justify-between">
+                        <label className="text-sm text-neutral-400">{p.name}</label>
+                        <div className="flex items-center gap-2">
+                            <input
+                                type="color" value={val}
+                                onChange={e => setParam(p.id, e.target.value)}
+                                className="w-8 h-8 rounded cursor-pointer bg-transparent border-0"
+                            />
+                            <span className="text-xs text-neutral-500 font-mono">{String(val).toUpperCase()}</span>
+                        </div>
+                    </div>
+                );
+            case 'select':
+                return (
+                    <div key={p.id} className="space-y-1">
+                        <label className="text-sm text-neutral-400">{p.name}</label>
+                        <select
+                            value={val}
+                            onChange={e => setParam(p.id, e.target.value)}
+                            className="w-full bg-neutral-800 border border-neutral-700 rounded px-3 py-2 text-sm text-white focus:border-violet-500 focus:outline-none"
+                        >
+                            {p.options?.map((opt: any) => (
+                                <option key={opt.value} value={opt.value}>{opt.label}</option>
+                            ))}
+                        </select>
+                    </div>
+                );
+            default:
+                return null;
+        }
+    };
+
+    // Seções que NÃO são "Cores" — renderizadas na ordem normal
+    const mainSections = config?.sections?.filter((s: any) => s.name !== 'Cores') ?? [];
+    // Seção de Cores — renderizada por último
+    const colorsSection = config?.sections?.find((s: any) => s.name === 'Cores');
+
+    const renderAccordionSection = (section: any) => {
+        const isOpen = openSections[section.name] ?? true;
+        return (
+            <div key={section.name} className="border border-neutral-800 rounded-lg overflow-hidden">
+                <button
+                    type="button"
+                    onClick={() => toggleSection(section.name)}
+                    className="w-full flex items-center justify-between px-3 py-2.5 bg-neutral-900 hover:bg-neutral-800 transition-colors text-left"
+                >
+                    <span className="text-xs font-semibold text-neutral-400 uppercase tracking-widest">
+                        {section.name}
+                    </span>
+                    <ChevronDown
+                        className={`w-4 h-4 text-neutral-500 transition-transform duration-200 ${
+                            isOpen ? 'rotate-0' : '-rotate-90'
+                        }`}
+                    />
+                </button>
+                {isOpen && (
+                    <div className="px-3 pb-3 pt-2 space-y-4 bg-neutral-950">
+                        {section.parameters?.map(renderParam)}
+                    </div>
+                )}
+            </div>
+        );
+    };
+
+    return (
+        <div className="min-h-screen bg-neutral-900 text-neutral-200 flex flex-col font-sans">
+            <header className="flex items-center gap-4 px-6 py-4 bg-neutral-950 border-b border-neutral-800">
+                <Link to="/" className="text-neutral-500 hover:text-violet-400 transition-colors">
+                    <Home className="w-5 h-5" />
+                </Link>
+                <ChevronRight className="w-4 h-4 text-neutral-700" />
+                <div className="flex items-center gap-2 text-violet-400 font-bold tracking-wide">
+                    <Type className="w-5 h-5" />
+                    Letreiro Personalizado
+                </div>
+            </header>
+
+            <main className="flex flex-1 min-h-0 overflow-hidden">
+                <aside className="w-80 flex-shrink-0 bg-neutral-950 border-r border-neutral-800 flex flex-col">
+                    <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                        {!config && (
+                            <p className="text-sm text-neutral-600 animate-pulse">Carregando configurações...</p>
+                        )}
+                        {config && (
+                            <>
+                                {/* Parâmetros principais sempre visíveis */}
+                                <div className="space-y-4 pb-1">
+                                    <h2 className="text-xs font-semibold text-neutral-500 uppercase tracking-widest flex items-center gap-2">
+                                        <Sliders className="w-3.5 h-3.5" /> Texto
+                                    </h2>
+                                    {config.parameters?.map(renderParam)}
+                                </div>
+                                {/* Seções colapsáveis (exceto Cores) */}
+                                {mainSections.map(renderAccordionSection)}
+                                {/* Cores — última seção, antes do botão */}
+                                {colorsSection && renderAccordionSection(colorsSection)}
+                            </>
+                        )}
+                        {error && (
+                            <div className="bg-red-950 border border-red-800 rounded-lg p-3 text-sm text-red-300">
+                                {error}
+                            </div>
+                        )}
+                    </div>
+                    <div className="p-4 border-t border-neutral-800 bg-neutral-950">
+                        <button
+                            onClick={handleGenerate}
+                            disabled={isGenerating || !config}
+                            className="w-full py-3 bg-violet-600 hover:bg-violet-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold rounded shadow-lg shadow-violet-900/40 transition-all"
+                        >
+                            {isGenerating ? 'Gerando...' : 'Gerar Modelo 3D'}
+                        </button>
+                    </div>
+                </aside>
+
+                <section className="flex-1 p-4 relative min-w-0 min-h-0 flex flex-col gap-3">
+                    <div className="flex-1 relative min-h-0">
+                        <div className="absolute inset-0">
+                            <Viewer3D
+                                carimbBaseUrl={baseUrl}
+                                carimbArteUrl={lettersUrl}
+                                cortadorUrl={null}
+                                isGenerating={isGenerating}
+                                artColor={(params['letters_color'] as string) ?? '#FFFFFF'}
+                                modelColor={(params['base_color'] as string) ?? '#1B40D1'}
+                            />
+                        </div>
+                    </div>
+                    {tmfUrl && (
+                        <div className="flex-shrink-0 flex justify-center">
+                            <button
+                                onClick={() => downloadBlob(tmfUrl!, 'name_topper_all.3mf')}
+                                className="flex items-center gap-2 px-6 py-2.5 bg-violet-600 hover:bg-violet-500 text-white font-semibold rounded-lg shadow-lg shadow-violet-900/40 transition-colors text-sm"
+                            >
+                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                                Baixar 3MF
+                            </button>
+                        </div>
+                    )}
+                </section>
             </main>
         </div>
     );
@@ -673,6 +1119,28 @@ function Vitrine() {
                             Gere conjuntos de cortador e carimbo para biscoitos e massas usando apenas arquivos SVG em 2D.
                         </p>
                     </Link>
+                    <Link to="/gerador/test_holes_vertical" className="group bg-neutral-950 border border-neutral-800 p-8 rounded-2xl hover:border-amber-500 transition-all hover:shadow-[0_0_30px_rgba(245,158,11,0.15)] block">
+                        <div className="w-16 h-16 bg-neutral-900 border border-neutral-800 text-amber-500 rounded-xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
+                            <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                                <rect x="5" y="2" width="14" height="20" rx="2" strokeLinecap="round" strokeLinejoin="round" />
+                                <circle cx="12" cy="8" r="2" />
+                                <circle cx="12" cy="16" r="2" />
+                            </svg>
+                        </div>
+                        <h2 className="text-2xl font-bold group-hover:text-amber-400 transition-colors mb-3">Teste de Furos Verticais</h2>
+                        <p className="text-neutral-500 leading-relaxed text-sm">
+                            Gere um cubo de teste para calibrar furos verticais (como os do name topper). Largura fixa de 15 mm.
+                        </p>
+                    </Link>
+                    <Link to="/gerador/name_topper" className="group bg-neutral-950 border border-neutral-800 p-8 rounded-2xl hover:border-violet-500 transition-all hover:shadow-[0_0_30px_rgba(139,92,246,0.15)] block">
+                        <div className="w-16 h-16 bg-neutral-900 border border-neutral-800 text-violet-400 rounded-xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
+                            <Type className="w-8 h-8" />
+                        </div>
+                        <h2 className="text-2xl font-bold group-hover:text-violet-400 transition-colors mb-3">Letreiro Personalizado</h2>
+                        <p className="text-neutral-500 leading-relaxed text-sm">
+                            Crie letreiros 3D multicolor com texto em duas linhas, escolha de fonte, cores e furação para chaveiro ou topper de bolo.
+                        </p>
+                    </Link>
                 </div>
             </main>
         </div>
@@ -685,6 +1153,8 @@ export default function App() {
             <Routes>
                 <Route path="/" element={<Vitrine />} />
                 <Route path="/gerador/cortador_cookie" element={<Generator />} />
+                <Route path="/gerador/test_holes_vertical" element={<TestHolesVertical />} />
+                <Route path="/gerador/name_topper" element={<NameTopper />} />
             </Routes>
         </BrowserRouter>
     );
