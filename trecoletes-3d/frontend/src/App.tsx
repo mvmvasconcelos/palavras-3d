@@ -125,6 +125,7 @@ function Generator() {
     const [carimbBaseUrl, setCarimbBaseUrl] = useState<string | null>(null);
     const [carimbArteUrl, setCarimbArteUrl] = useState<string | null>(null);
     const [cortadorUrl, setCortadorUrl] = useState<string | null>(null);
+    const [tmfUrl, setTmfUrl] = useState<string | null>(null);
 
     // Viewer colors
     const [artColor, setArtColor] = useState('#f5f0e8');    // raised art (bone white)
@@ -279,6 +280,7 @@ function Generator() {
         setCarimbBaseUrl(null);
         setCarimbArteUrl(null);
         setCortadorUrl(null);
+        setTmfUrl(null);
         try {
             const formData = new FormData();
             const linhasBlob = new Blob([svgPreview.thickenedSvg], { type: 'image/svg+xml' });
@@ -288,6 +290,7 @@ function Generator() {
             formData.append('silhueta_svg', silhuetaBlob, 'silhueta.svg');
 
             formData.append('base_height', '2.0');
+            formData.append('art_width', artWidth.toString());
             formData.append('art_height', artHeight.toString());
             formData.append('cutter_shape', cutterShape);
             formData.append('cutter_width', effectiveCutterW.toString());
@@ -311,8 +314,7 @@ function Generator() {
                 const base = 'http://localhost:8000';
                 if (res.data.files.carimbo_base) setCarimbBaseUrl(`${base}${res.data.files.carimbo_base}`);
                 if (res.data.files.carimbo_arte) setCarimbArteUrl(`${base}${res.data.files.carimbo_arte}`);
-                if (res.data.files.cortador) setCortadorUrl(`${base}${res.data.files.cortador}`);
-            }
+                if (res.data.files.cortador) setCortadorUrl(`${base}${res.data.files.cortador}`);                if (res.data.files['3mf']) setTmfUrl(`${base}${res.data.files['3mf']}`);            }
         } catch (err) {
             console.error("Error generating piecess:", err);
             alert("Falha ao gerar o modelo 3D.");
@@ -617,17 +619,31 @@ function Generator() {
                 </aside>
 
                 {/* Right Viewer Canvas */}
-                <section className="flex-1 p-4 relative min-w-0 min-h-0">
-                    <div className="absolute inset-4">
-                        <Viewer3D
-                            carimbBaseUrl={carimbBaseUrl}
-                            carimbArteUrl={carimbArteUrl}
-                            cortadorUrl={cortadorUrl}
-                            isGenerating={isGenerating}
-                            artColor={artColor}
-                            modelColor={modelColor}
-                        />
+                <section className="flex-1 p-4 relative min-w-0 min-h-0 flex flex-col gap-3">
+                    <div className="flex-1 relative min-h-0">
+                        <div className="absolute inset-0">
+                            <Viewer3D
+                                carimbBaseUrl={carimbBaseUrl}
+                                carimbArteUrl={carimbArteUrl}
+                                cortadorUrl={cortadorUrl}
+                                isGenerating={isGenerating}
+                                artColor={artColor}
+                                modelColor={modelColor}
+                            />
+                        </div>
                     </div>
+                    {tmfUrl && (
+                        <div className="flex-shrink-0 flex justify-center">
+                            <a
+                                href={tmfUrl}
+                                download
+                                className="flex items-center gap-2 px-6 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold rounded-lg shadow-lg shadow-emerald-900/40 transition-colors text-sm"
+                            >
+                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                                Baixar 3MF Multicolor
+                            </a>
+                        </div>
+                    )}
                 </section>
 
             </main>

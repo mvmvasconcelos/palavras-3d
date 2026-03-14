@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Canvas, useLoader, useFrame, useThree } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
@@ -76,17 +76,73 @@ export interface Viewer3DProps {
 
 export default function Viewer3D({ carimbBaseUrl, carimbArteUrl, cortadorUrl, isGenerating, artColor, modelColor }: Viewer3DProps) {
     const [camInfo, setCamInfo] = useState<CameraInfo | null>(null);
+    const [elapsed, setElapsed] = useState(0);
+    const [msgIndex, setMsgIndex] = useState(0);
     const fmt = (n: number) => n.toFixed(1);
     const hasModel = carimbBaseUrl || carimbArteUrl || cortadorUrl;
+
+    const MESSAGES = [
+        { label: "Enviando arte ao servidor...",     detail: "Normalizando SVG para o OpenSCAD" },
+        { label: "Calculando silhueta...",            detail: "Gerando geometria do cortador" },
+        { label: "Gerando carimbo base...",           detail: "Extrudando a placa de apoio" },
+        { label: "Gerando arte em relevo...",         detail: "Processando os traços do design" },
+        { label: "Montando as peças...",              detail: "Unindo malhas para exportação 3MF" },
+        { label: "Quase pronto...",                   detail: "Finalizando geometria" },
+    ];
+
+    useEffect(() => {
+        if (!isGenerating) { setElapsed(0); setMsgIndex(0); return; }
+        setElapsed(0);
+        setMsgIndex(0);
+
+        const timer = setInterval(() => setElapsed(s => s + 1), 1000);
+
+        // Avança mensagem: primeiras trocas rápidas, depois desacelera
+        const delays = [2000, 5000, 10000, 18000, 30000];
+        let step = 0;
+        const advance = () => {
+            step++;
+            setMsgIndex(i => Math.min(i + 1, MESSAGES.length - 1));
+            if (step < delays.length) {
+                setTimeout(advance, delays[step]);
+            }
+        };
+        const first = setTimeout(advance, delays[0]);
+
+        return () => { clearInterval(timer); clearTimeout(first); };
+    }, [isGenerating]);
+
+    const msg = MESSAGES[msgIndex];
 
     return (
         <div className="w-full h-full relative bg-neutral-800 rounded-lg overflow-hidden border border-neutral-700">
 
             {isGenerating && (
-                <div className="absolute inset-0 bg-neutral-900/80 backdrop-blur-sm flex flex-col items-center justify-center z-10">
-                    <div className="w-12 h-12 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin mb-4" />
-                    <h3 className="text-xl font-semibold text-emerald-400">Processando OpenSCAD...</h3>
-                    <p className="text-neutral-400 text-sm mt-2">Isso pode levar alguns segundos dependendo da complexidade.</p>
+                <div className="absolute inset-0 bg-neutral-900/80 backdrop-blur-sm flex flex-col items-center justify-center z-10 gap-4">
+                    {/* Spinner */}
+                    <div className="w-12 h-12 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+
+                    {/* Mensagem principal */}
+                    <div className="text-center space-y-1 px-8">
+                        <h3 className="text-lg font-semibold text-emerald-400 transition-all">{msg.label}</h3>
+                        <p className="text-neutral-500 text-sm">{msg.detail}</p>
+                    </div>
+
+                    {/* Barra de progresso indeterminada */}
+                    <div className="w-64 h-1.5 bg-neutral-700 rounded-full overflow-hidden">
+                        <div className="h-full bg-emerald-500 rounded-full animate-[indeterminate_1.6s_ease-in-out_infinite]"
+                             style={{ width: '40%' }} />
+                    </div>
+
+                    {/* Partes + timer */}
+                    <div className="flex items-center gap-4 text-xs text-neutral-600">
+                        <span className={carimbBaseUrl ? 'text-emerald-500' : ''}>Base</span>
+                        <span>·</span>
+                        <span className={carimbArteUrl ? 'text-emerald-500' : ''}>Arte</span>
+                        <span>·</span>
+                        <span className={cortadorUrl ? 'text-emerald-500' : ''}>Cortador</span>
+                        <span className="ml-3 font-mono text-neutral-700">{elapsed}s</span>
+                    </div>
                 </div>
             )}
 
@@ -99,9 +155,9 @@ export default function Viewer3D({ carimbBaseUrl, carimbArteUrl, cortadorUrl, is
                 <React.Suspense fallback={null}>
                     {hasModel ? (
                         <>
-                            {carimbBaseUrl && <StlMesh url={carimbBaseUrl} color={modelColor} />}
-                            {carimbArteUrl && <StlMesh url={carimbArteUrl} color={artColor} />}
-                            {cortadorUrl && <StlMesh url={cortadorUrl} color={modelColor} />}
+                            {carimbBaseUrl && <StlMesh key={carimbBaseUrl} url={carimbBaseUrl} color={modelColor} />}
+                            {carimbArteUrl && <StlMesh key={carimbArteUrl} url={carimbArteUrl} color={artColor} />}
+                            {cortadorUrl && <StlMesh key={cortadorUrl} url={cortadorUrl} color={modelColor} />}
                         </>
                     ) : (
                         <PlaceholderModel />

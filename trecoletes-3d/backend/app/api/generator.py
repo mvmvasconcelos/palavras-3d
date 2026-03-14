@@ -1,11 +1,13 @@
+import hashlib
 import os
 import re
+import shutil
 import subprocess
-import tempfile
-import uuid
+import time
 import json
-from typing import List, Dict, Any
-from fastapi import APIRouter, UploadFile, Form, BackgroundTasks, Request
+import trimesh
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from fastapi import APIRouter, UploadFile, Form, Request
 from fastapi.responses import JSONResponse
 from app.api._svg_normalize import normalize_svg_to_origin
 
@@ -15,6 +17,52 @@ router = APIRouter()
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 MODELS_DIR = os.path.join(BASE_DIR, "models")
 GENERATED_DIR = os.path.join(BASE_DIR, "static", "generated")
+
+OPENSCAD_TIMEOUT = 300  # segundos por parte
+JOB_MAX_AGE_HOURS = 24
+
+
+def _cleanup_old_jobs():
+    """Remove diretórios de job com mais de JOB_MAX_AGE_HOURS horas."""
+    if not os.path.isdir(GENERATED_DIR):
+        return
+    cutoff = time.time() - JOB_MAX_AGE_HOURS * 3600
+    for entry in os.scandir(GENERATED_DIR):
+        if entry.is_dir() and entry.stat().st_mtime < cutoff:
+            try:
+                shutil.rmtree(entry.path)
+            except Exception:
+                pass
+
+
+def _to_scad_assignment(key: str, raw: str) -> str:
+    """
+    Converte um par key/value vindo do FormData em um argumento -D do OpenSCAD.
+    Todos os valores chegam como string; detectamos o tipo pretendido:
+      - "true" / "false"  → booleano SCAD
+      - int/float parseável → número SCAD
+      - "[...]"            → array SCAD (passado cru)
+      - qualquer outra coisa → string SCAD com aspas escapadas
+    """
+    v = raw.strip()
+    if v.lower() == "true":
+        return f"{key}=true"
+    if v.lower() == "false":
+        return f"{key}=false"
+    if v.startswith("[") and v.endswith("]"):
+        return f"{key}={v}"
+    try:
+        int(v)
+        return f"{key}={v}"
+    except ValueError:
+        pass
+    try:
+        float(v)
+        return f"{key}={v}"
+    except ValueError:
+        pass
+    escaped = v.replace('"', '\\"')
+    return f'{key}="{escaped}"'
 
 
 def normalize_svg_viewbox(svg_bytes: bytes) -> bytes:
@@ -86,93 +134,150 @@ async def generate_model(
     model_id: str,
     linhas_svg: UploadFile = Form(...),
     silhueta_svg: UploadFile = Form(...),
-    base_height: float = Form(2.0),
-    art_width: float = Form(70.0),
-    art_height: float = Form(70.0),
-    cutter_shape: str = Form("silhouette"),
-    cutter_width: float = Form(80.0),
-    cutter_height: float = Form(80.0)
 ):
     scad_path = os.path.join(MODELS_DIR, model_id, "model.scad")
     if not os.path.exists(scad_path):
         return JSONResponse(status_code=404, content={"error": "Model not found"})
 
-    # Create a unique job directory inside generated
-    job_id = str(uuid.uuid4())
+    # Lê os bytes dos SVGs e os parâmetros do form antes de qualquer I/O de disco,
+    # para que o hash possa ser calculado antes de criar diretórios.
+    linhas_bytes_raw = await linhas_svg.read()
+    silhueta_bytes_raw = await silhueta_svg.read()
+    form_data = await request.form()
+
+    # Parâmetros de texto do form (exclui os campos de arquivo já lidos acima)
+    file_keys = {"linhas_svg", "silhueta_svg"}
+    text_params = sorted(
+        (k, v) for k, v in form_data.items()
+        if k not in file_keys and isinstance(v, str)
+    )
+
+    # Cache MD5: hash determinístico de tudo que compõe este job
+    hasher = hashlib.md5()
+    hasher.update(model_id.encode())
+    hasher.update(linhas_bytes_raw)
+    hasher.update(silhueta_bytes_raw)
+    for k, v in text_params:
+        hasher.update(f"{k}={v}".encode())
+    job_id = hasher.hexdigest()[:16]
+
     job_dir = os.path.join(GENERATED_DIR, job_id)
+    parts_to_render = ["carimbo_base", "carimbo_arte", "cortador"]
+    mf_filename = f"{model_id}_all.3mf"
+    mf_filepath = os.path.join(job_dir, mf_filename)
+
+    # Cache hit: 3MF já existe para estes parâmetros exatos
+    if os.path.exists(mf_filepath):
+        print(f"[CACHE HIT] job_id={job_id}", flush=True)
+        cached_urls = {p: f"/static/generated/{job_id}/{model_id}_{p}.stl" for p in parts_to_render}
+        cached_urls["3mf"] = f"/static/generated/{job_id}/{mf_filename}"
+        return {"success": True, "job_id": job_id, "files": cached_urls}
+
+    # Cache miss: cria o diretório do job e processa
+    _cleanup_old_jobs()
     os.makedirs(job_dir, exist_ok=True)
 
-    # Save incoming SVGs to the job directory
-    linhas_path = os.path.join(job_dir, "linhas.svg")
-    svg_bytes = await linhas_svg.read()
     # DEBUG: print raw SVG header to inspect viewBox from Paper.js
-    print(f"[DEBUG linhas.svg first 300]: {svg_bytes[:300].decode('utf-8','ignore')}", flush=True)
-    svg_bytes = normalize_svg_viewbox(svg_bytes)  # shift viewBox origin to (0,0)
-    svg_bytes = normalize_svg_to_origin(svg_bytes)  # shift PATH CONTENT to (0,0)
-    print(f"[DEBUG linhas.svg after normalize first 400]: {svg_bytes[:400].decode('utf-8','ignore')}", flush=True)
-    with open(linhas_path, "wb") as f:
-        f.write(svg_bytes)
+    print(f"[DEBUG linhas.svg first 300]: {linhas_bytes_raw[:300].decode('utf-8','ignore')}", flush=True)
+    linhas_bytes = normalize_svg_viewbox(linhas_bytes_raw)
+    linhas_bytes = normalize_svg_to_origin(linhas_bytes)
+    print(f"[DEBUG linhas.svg after normalize first 400]: {linhas_bytes[:400].decode('utf-8','ignore')}", flush=True)
 
-    # After normalize_svg_viewbox + normalize_svg_to_origin:
-    #   - viewBox is "0 0 contentW contentH" (content size, not canvas size)
-    #   - Path coordinates are shifted so bounding box starts at (0,0)
-    #   - OpenSCAD import + resize([art_w, art_h]) => content at (0,0)->(art_w, art_h)
-    #   - art_svg() in model.scad translates by [-art_w/2, -art_h/2] to centre at origin
+    linhas_path = os.path.join(job_dir, "linhas.svg")
+    with open(linhas_path, "wb") as f:
+        f.write(linhas_bytes)
+
     silhueta_path = os.path.join(job_dir, "silhueta.svg")
     with open(silhueta_path, "wb") as f:
-        f.write(await silhueta_svg.read())
+        f.write(silhueta_bytes_raw)
 
-    # Lê os argumentos dinâmicos enviados pelo FormData
-    form_data = await request.form()
-    
-    # Gera os argumentos do OpenSCAD
-    # Passamos os caminhos absolutos dos SVGs para as variáveis do SCAD
-    scad_variables = [
+    # Monta os argumentos -D base para o OpenSCAD (sem a parte — injetada por worker)
+    scad_variables_base = [
         "-D", f'svg_linhas_path="{linhas_path}"',
         "-D", f'svg_silhueta_path="{silhueta_path}"',
-        "-D", f'base_height={base_height}',
-        "-D", f'art_width={art_width}',
-        "-D", f'art_height={art_height}',
-        "-D", f'cutter_shape="{cutter_shape}"',
-        "-D", f'cutter_width={cutter_width}',
-        "-D", f'cutter_height={cutter_height}'
     ]
+    for key, value in text_params:
+        scad_variables_base.extend(["-D", _to_scad_assignment(key, value)])
 
-    # Injeta automaticamente qualquer parâmetro dinâmico extra vindo do config.json
-    # Ignoramos chaves já processadas nativamente
-    native_keys = {"linhas_svg", "silhueta_svg", "base_height", "art_width", "art_height", "cutter_shape", "cutter_width", "cutter_height"}
-    for key, value in form_data.items():
-        if key not in native_keys and isinstance(value, str):
-            # Adiciona ao SCAD "-D key=value"
-            scad_variables.extend(["-D", f'{key}={value}'])
+    font_path = os.path.join(MODELS_DIR, model_id)
 
-    parts_to_render = ["carimbo_base", "carimbo_arte", "cortador"]
-    generated_urls = {}
-
-    for part in parts_to_render:
+    def render_part(part: str) -> tuple[str, str] | tuple[str, Exception]:
+        """Renderiza uma parte via OpenSCAD. Retorna (part, output_path) ou (part, exceção)."""
         output_filename = f"{model_id}_{part}.stl"
         output_path = os.path.join(job_dir, output_filename)
-        
+
+        # Reutiliza STL existente (pode ocorrer quando o 3MF anterior falhou)
+        if os.path.exists(output_path):
+            return part, output_path
+
         cmd = [
             "openscad",
             "-o", output_path,
-            *scad_variables,
+            *scad_variables_base,
             "-D", f'part="{part}"',
-            scad_path
+            scad_path,
         ]
-        
+        env = os.environ.copy()
+        env["OPENSCAD_FONT_PATH"] = font_path
         try:
-            # Run headless OpenSCAD in Docker
-            # Define OPENSCAD_FONT_PATH so OpenSCAD can find local fonts (.ttf/.otf) next to the model
-            env = os.environ.copy()
-            env["OPENSCAD_FONT_PATH"] = os.path.join(MODELS_DIR, model_id)
-            
-            process = subprocess.run(cmd, check=True, capture_output=True, text=True, env=env)
-            generated_urls[part] = f"/static/generated/{job_id}/{output_filename}"
+            subprocess.run(cmd, check=True, capture_output=True, text=True,
+                           env=env, timeout=OPENSCAD_TIMEOUT)
+            return part, output_path
+        except subprocess.TimeoutExpired:
+            return part, TimeoutError(f"OpenSCAD timeout ({OPENSCAD_TIMEOUT}s) na parte '{part}'")
         except subprocess.CalledProcessError as e:
-            return JSONResponse(status_code=500, content={
-                "error": f"OpenSCAD Render failed for {part}",
-                "details": e.stderr
-            })
+            return part, RuntimeError(e.stderr)
+        except Exception as e:
+            return part, RuntimeError(f"Erro inesperado na parte '{part}': {repr(e)}")
+
+    # Renderiza as 3 partes em paralelo
+    generated_urls = {}
+    errors = {}
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        futures = {pool.submit(render_part, p): p for p in parts_to_render}
+        for future in as_completed(futures):
+            part, result = future.result()
+            if isinstance(result, Exception):
+                errors[part] = str(result)
+            else:
+                generated_urls[part] = f"/static/generated/{job_id}/{model_id}_{part}.stl"
+
+    if errors:
+        print(f"[ERROR] Falha na renderização: {errors}", flush=True)
+        return JSONResponse(status_code=500, content={"error": "OpenSCAD falhou", "details": errors})
+
+    # Generate proper Multi-Object 3MF
+    try:
+        meshes = []
+        color_map = {
+            "carimbo_base": [100, 100, 255, 255],
+            "carimbo_arte": [255, 100, 100, 255],
+            "cortador": [100, 255, 100, 255]
+        }
+        name_map = {
+            "carimbo_base": "Base do Carimbo",
+            "carimbo_arte": "Arte do Carimbo",
+            "cortador": "Cortador"
+        }
+        
+        for part in parts_to_render:
+            stl_path = os.path.join(job_dir, f"{model_id}_{part}.stl")
+            if os.path.exists(stl_path):
+                loaded = trimesh.load(stl_path)
+                # trimesh.load pode retornar Scene (multi-body) ou Trimesh
+                if isinstance(loaded, trimesh.Scene):
+                    mesh = trimesh.util.concatenate(list(loaded.geometry.values()))
+                else:
+                    mesh = loaded
+                mesh.metadata['name'] = name_map.get(part, part)
+                mesh.visual.face_colors = color_map.get(part, [200, 200, 200, 255])
+                meshes.append(mesh)
+                
+        if meshes:
+            scene = trimesh.Scene(meshes)
+            scene.export(mf_filepath, file_type='3mf')
+            generated_urls["3mf"] = f"/static/generated/{job_id}/{mf_filename}"
+    except Exception as e:
+        print(f"Error packing 3MF via trimesh: {repr(e)}")
 
     return {"success": True, "job_id": job_id, "files": generated_urls}
