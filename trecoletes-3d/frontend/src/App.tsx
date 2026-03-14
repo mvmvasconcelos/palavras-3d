@@ -871,6 +871,14 @@ function NameTopper() {
     // Controla quais seções estão abertas (abertas por padrão: Linha 2 e Ajustes Finos fechadas)
     const [openSections, setOpenSections] = React.useState<Record<string, boolean>>({});
 
+    // Batch generation state
+    const [batchNames, setBatchNames] = React.useState<{nome: string}[] | null>(null);
+    const [batchId, setBatchId] = React.useState<string | null>(null);
+    const [batchProgress, setBatchProgress] = React.useState<{done: number, total: number} | null>(null);
+    const [batchTmfUrl, setBatchTmfUrl] = React.useState<string | null>(null);
+    const batchFileRef = React.useRef<HTMLInputElement>(null);
+    const pollRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
+
     React.useEffect(() => {
         axios.get('http://localhost:8000/api/models/name_topper/config')
             .then(res => {
@@ -917,6 +925,85 @@ function NameTopper() {
             setError(err?.response?.data?.error ?? 'Erro desconhecido');
         } finally {
             setIsGenerating(false);
+        }
+    };
+
+    // Cleanup polling on unmount
+    React.useEffect(() => {
+        return () => { if (pollRef.current) clearInterval(pollRef.current); };
+    }, []);
+
+    const handleBatchUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = ev => {
+            try {
+                const data = JSON.parse(ev.target?.result as string);
+                if (Array.isArray(data) && data.length > 0 && data.every((item: any) => typeof item.nome === 'string')) {
+                    setBatchNames(data);
+                    setBatchId(null);
+                    setBatchProgress(null);
+                    setBatchTmfUrl(null);
+                    setError(null);
+                } else {
+                    setError('JSON inválido. Esperado: [{"nome":"ALICE"},...]');
+                }
+            } catch {
+                setError('Não foi possível ler o JSON.');
+            }
+        };
+        reader.readAsText(file);
+        e.target.value = '';
+    };
+
+    const handleBatchGenerate = async () => {
+        if (!batchNames || batchNames.length === 0) return;
+        if (pollRef.current) clearInterval(pollRef.current);
+        setBatchId(null);
+        setBatchProgress({ done: 0, total: batchNames.length });
+        setBatchTmfUrl(null);
+        setError(null);
+        try {
+            const form = new FormData();
+            form.append('names', JSON.stringify(batchNames));
+            Object.entries(params)
+                .filter(([k]) => k !== 'text_line_1')
+                .forEach(([k, v]) => form.append(k, String(v ?? '')));
+            const res = await axios.post('http://localhost:8000/api/generate_batch/name_topper', form);
+            const id: string = res.data.batch_id;
+            setBatchId(id);
+            setBatchProgress({ done: res.data.done ?? 0, total: res.data.total });
+
+            // Cache hit: já concluído, sem polling
+            if (res.data.status === 'done') {
+                setBatchProgress({ done: res.data.total, total: res.data.total });
+                setBatchTmfUrl(`http://localhost:8000${res.data.file}`);
+                return;
+            }
+
+            pollRef.current = setInterval(async () => {
+                try {
+                    const status = await axios.get(`http://localhost:8000/api/batch_status/${id}`);
+                    const job = status.data;
+                    setBatchProgress({ done: job.done, total: job.total });
+                    if (job.status === 'done') {
+                        clearInterval(pollRef.current!);
+                        pollRef.current = null;
+                        setBatchTmfUrl(`http://localhost:8000${job.file}`);
+                    } else if (job.status === 'error') {
+                        clearInterval(pollRef.current!);
+                        pollRef.current = null;
+                        setError(job.error ?? 'Erro na geração em lote');
+                    }
+                } catch {
+                    clearInterval(pollRef.current!);
+                    pollRef.current = null;
+                }
+            }, 2000);
+        } catch (err: any) {
+            setError(err?.response?.data?.error ?? 'Erro ao iniciar lote');
+            setBatchProgress(null);
         }
     };
 
@@ -1056,7 +1143,7 @@ function NameTopper() {
                             </div>
                         )}
                     </div>
-                    <div className="p-4 border-t border-neutral-800 bg-neutral-950">
+                    <div className="p-4 border-t border-neutral-800 bg-neutral-950 space-y-3">
                         <button
                             onClick={handleGenerate}
                             disabled={isGenerating || !config}
@@ -1064,6 +1151,62 @@ function NameTopper() {
                         >
                             {isGenerating ? 'Gerando...' : 'Gerar Modelo 3D'}
                         </button>
+
+                        {/* Batch generation */}
+                        <div className="border-t border-neutral-800 pt-3 space-y-2">
+                            <input
+                                ref={batchFileRef}
+                                type="file"
+                                accept=".json"
+                                className="hidden"
+                                onChange={handleBatchUpload}
+                            />
+                            <div className="flex gap-2">
+                                <button
+                                    type="button"
+                                    onClick={() => batchFileRef.current?.click()}
+                                    disabled={!config}
+                                    className="flex-1 py-2 text-xs bg-neutral-800 hover:bg-neutral-700 disabled:opacity-40 text-neutral-300 font-medium rounded border border-neutral-700 transition-all"
+                                >
+                                    {batchNames ? `📋 ${batchNames.length} nomes` : '📂 Carregar JSON'}
+                                </button>
+                                {batchNames && !batchProgress && (
+                                    <button
+                                        type="button"
+                                        onClick={handleBatchGenerate}
+                                        disabled={!config}
+                                        className="flex-1 py-2 text-xs bg-violet-800 hover:bg-violet-700 disabled:opacity-40 text-white font-semibold rounded border border-violet-700 transition-all"
+                                    >
+                                        Gerar em Lote
+                                    </button>
+                                )}
+                            </div>
+                            {batchProgress && (
+                                <div className="space-y-1">
+                                    <div className="w-full bg-neutral-800 rounded-full h-2 overflow-hidden">
+                                        <div
+                                            className="bg-violet-500 h-2 rounded-full transition-all duration-500"
+                                            style={{ width: `${batchProgress.total > 0 ? (batchProgress.done / batchProgress.total) * 100 : 0}%` }}
+                                        />
+                                    </div>
+                                    <p className="text-xs text-neutral-400 text-center">
+                                        {batchTmfUrl
+                                            ? 'Lote concluído!'
+                                            : `${batchProgress.done} de ${batchProgress.total} renderizados...`}
+                                    </p>
+                                </div>
+                            )}
+                            {batchTmfUrl && (
+                                <button
+                                    type="button"
+                                    onClick={() => downloadBlob(batchTmfUrl!, 'name_topper_lote.3mf')}
+                                    className="w-full py-2 flex items-center justify-center gap-2 text-xs bg-emerald-700 hover:bg-emerald-600 text-white font-semibold rounded transition-all"
+                                >
+                                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                                    Baixar Lote (3MF)
+                                </button>
+                            )}
+                        </div>
                     </div>
                 </aside>
 

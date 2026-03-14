@@ -7,11 +7,17 @@ import time
 import json
 import uuid
 import zipfile
+import threading
 import trimesh
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from fastapi import APIRouter, UploadFile, Form, Request
 from fastapi.responses import JSONResponse
 from app.api._svg_normalize import normalize_svg_to_origin
+
+# ── Estado global de jobs de batch (em memória) ──────────────────────────────
+# { job_id: { "total": N, "done": N, "errors": [], "status": "running"|"done"|"error", "file": url } }
+_batch_jobs: dict = {}
+_batch_jobs_lock = threading.Lock()
 
 router = APIRouter()
 
@@ -334,6 +340,242 @@ def _pack_bambu_3mf(
         if os.path.exists(mf_filepath):
             os.remove(mf_filepath)
         return False
+
+
+# ---------------------------------------------------------------------------
+# Montagem de 3MF em lote: N modelos na mesma prancheta (223×223 mm)
+# ---------------------------------------------------------------------------
+
+PLATE_W = 223.0   # mm
+PLATE_H = 223.0   # mm
+BATCH_GAP = 5.0   # mm de margem entre peças
+
+
+def _layout_rects(sizes: list[tuple[float, float]]) -> list[tuple[float, float]]:
+    """
+    Distribui N retângulos (w, h) na prancheta usando shelf-packing simples.
+    Retorna lista de (x, y) — canto inferior-esquerdo de cada peça,
+    centralizada na prancheta ao final.
+    Peças que não cabem na prancheta são empilhadas continuando além do limite
+    (o Bambu Studio aceita e avisa o usuário).
+    """
+    positions = []
+    x, y = 0.0, 0.0
+    shelf_h = 0.0
+
+    for w, h in sizes:
+        if x + w > PLATE_W and x > 0:
+            # Avança para a próxima prateleira
+            x = 0.0
+            y += shelf_h + BATCH_GAP
+            shelf_h = 0.0
+        positions.append((x, y))
+        x += w + BATCH_GAP
+        shelf_h = max(shelf_h, h)
+
+    # Centraliza o conjunto na prancheta
+    total_w = max((pos[0] + sz[0]) for pos, sz in zip(positions, sizes))
+    total_h = max((pos[1] + sz[1]) for pos, sz in zip(positions, sizes))
+    off_x = max(0.0, (PLATE_W - total_w) / 2.0)
+    off_y = max(0.0, (PLATE_H - total_h) / 2.0)
+    return [(px + off_x, py + off_y) for px, py in positions]
+
+
+def _assemble_batch_3mf(
+    model_id: str,
+    render_tasks: list,
+    results: dict,
+    parts_to_render: list,
+    batch_dir: str,
+    output_path: str,
+):
+    """
+    Carrega os STLs de cada nome, calcula layout na prancheta e gera
+    um único .3mf com todos os objetos posicionados.
+    Cada nome vira um grupo de partes (base + letras) tratado como
+    um único objeto multicolor pelo Bambu Studio.
+    """
+    # Bambu template (estático) do modelo
+    template_dir = os.path.join(MODELS_DIR, model_id, "bambu_template")
+    parts_cfg_path = os.path.join(template_dir, "bambu_parts_config.json")
+    with open(parts_cfg_path, "r", encoding="utf-8") as fh:
+        bambu_cfg = json.load(fh)
+    part_defs = {p["scad_name"]: p for p in bambu_cfg["parts"]}
+
+    # ── 1. Carrega todas as malhas e calcula bounding boxes ──────────────
+    items = []   # list of { name, name_hash, parts: {part: mesh}, bbox_w, bbox_h }
+    for name, name_hash, src_hash, is_dup in render_tasks:
+        stl_paths = results.get(src_hash if is_dup else name_hash)
+        if not stl_paths:
+            continue
+        part_meshes = {}
+        for part in parts_to_render:
+            stl_p = stl_paths.get(part)
+            if stl_p and os.path.exists(stl_p):
+                loaded = trimesh.load(stl_p)
+                mesh = (trimesh.util.concatenate(list(loaded.geometry.values()))
+                        if isinstance(loaded, trimesh.Scene) else loaded)
+                part_meshes[part] = mesh
+        if not part_meshes:
+            continue
+
+        # Bounding box horizontal da peça (base define o footprint)
+        all_verts = trimesh.util.concatenate(list(part_meshes.values())).vertices
+        bbox_w = float(all_verts[:, 0].max() - all_verts[:, 0].min())
+        bbox_h_y = float(all_verts[:, 1].max() - all_verts[:, 1].min())
+        items.append({
+            "name": name,
+            "part_meshes": part_meshes,
+            "bbox_w": bbox_w,
+            "bbox_hy": bbox_h_y,
+        })
+
+    if not items:
+        raise RuntimeError("Nenhum modelo renderizado com sucesso para montar o 3MF.")
+
+    # ── 2. Layout na prancheta ───────────────────────────────────────────
+    sizes = [(it["bbox_w"], it["bbox_hy"]) for it in items]
+    positions = _layout_rects(sizes)
+
+    # ── 3. Monta XMLs do 3MF ────────────────────────────────────────────
+    # Cada parte de cada nome é um <object> separado em object_1.model
+    # Todos compõem um único assembly no 3dmodel.model
+    all_mesh_entries = []   # (object_id, mesh)
+    all_part_cfgs    = []   # para model_settings.config
+    obj_id = 1
+    total_faces = 0
+
+    for idx, (item, (px, py)) in enumerate(zip(items, positions)):
+        # Normaliza Z: base no plano Z=0
+        combined = trimesh.util.concatenate(list(item["part_meshes"].values()))
+        z_min = float(combined.bounds[0][2])
+
+        for part in parts_to_render:
+            mesh = item["part_meshes"].get(part)
+            if mesh is None:
+                continue
+            # Aplica translação (layout X,Y) + Z normalização
+            m = mesh.copy()
+            m.apply_translation([px, py, -z_min])
+            defn = part_defs.get(part, {})
+            fc = len(m.faces)
+            total_faces += fc
+            all_mesh_entries.append((obj_id, m))
+            all_part_cfgs.append({
+                "object_id":      obj_id,
+                "scad_name":      part,
+                "display_name":   f"{item['name']} - {defn.get('display_name', part)}",
+                "extruder":       defn.get("extruder", 1),
+                "face_count":     fc,
+                "z_offset":       0.0,
+                "source_offset_z": 0.0,
+            })
+            obj_id += 1
+
+    # Gera XMLs
+    obj1_xml     = _xml_object_1_model(all_mesh_entries)
+    model3d_xml  = _xml_batch_3dmodel(all_part_cfgs)
+    settings_xml = _xml_batch_model_settings(all_part_cfgs, total_faces, model_id, len(items))
+
+    # ── 4. Empacota o ZIP (.3mf) ─────────────────────────────────────────
+    static_dir = os.path.join(template_dir, "static")
+    with zipfile.ZipFile(output_path, "w", zipfile.ZIP_DEFLATED) as zf:
+        if os.path.isdir(static_dir):
+            for root, _dirs, files in os.walk(static_dir):
+                for fname in files:
+                    abs_p = os.path.join(root, fname)
+                    arc_p = os.path.relpath(abs_p, static_dir).replace("\\", "/")
+                    zf.write(abs_p, arc_p)
+        zf.writestr("3D/Objects/object_1.model", obj1_xml)
+        zf.writestr("3D/3dmodel.model", model3d_xml)
+        zf.writestr("Metadata/model_settings.config", settings_xml)
+    print(f"[BATCH] 3MF gerado: {output_path}", flush=True)
+
+
+def _xml_batch_3dmodel(part_cfgs: list) -> bytes:
+    """3dmodel.model para batch: cada peça é um componente separado num único assembly."""
+    assembly_uuid = str(uuid.uuid4())
+    build_uuid    = str(uuid.uuid4())
+    item_uuid     = str(uuid.uuid4())
+    out = [
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        '<model unit="millimeter" xml:lang="en-US"'
+        ' xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02"'
+        ' xmlns:BambuStudio="http://schemas.bambulab.com/package/2021"'
+        ' xmlns:p="http://schemas.microsoft.com/3dmanufacturing/production/2015/06"'
+        ' requiredextensions="p">',
+        ' <metadata name="Application">BambuStudio-02.05.00.64</metadata>',
+        ' <metadata name="BambuStudio:3mfVersion">1</metadata>',
+        ' <resources>',
+        f'  <object id="999" p:UUID="{assembly_uuid}" type="model">',
+        '   <components>',
+    ]
+    for cfg in part_cfgs:
+        comp_uuid = str(uuid.uuid4())
+        out.append(
+            f'    <component p:path="/3D/Objects/object_1.model"'
+            f' objectid="{cfg["object_id"]}" p:UUID="{comp_uuid}"/>'
+        )
+    out += [
+        '   </components>',
+        '  </object>',
+        ' </resources>',
+        f' <build p:UUID="{build_uuid}">',
+        f'  <item objectid="999" p:UUID="{item_uuid}"'
+        '  transform="1 0 0 0 1 0 0 0 1 0 0 0" printable="1"/>',
+        ' </build>',
+        '</model>',
+    ]
+    return '\n'.join(out).encode('utf-8')
+
+
+def _xml_batch_model_settings(part_cfgs: list, total_faces: int, model_id: str, n_items: int) -> bytes:
+    """model_settings.config para batch."""
+    obj_extruder = part_cfgs[0]["extruder"] if part_cfgs else 1
+    out = [
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        '<config>',
+        '  <object id="999">',
+        f'    <metadata key="name" value="{model_id}_batch_{n_items}"/>',
+        f'    <metadata key="extruder" value="{obj_extruder}"/>',
+        f'    <metadata face_count="{total_faces}"/>',
+    ]
+    for cfg in part_cfgs:
+        out += [
+            f'    <part id="{cfg["object_id"]}" subtype="normal_part">',
+            f'      <metadata key="name" value="{cfg["display_name"]}"/>',
+            f'      <metadata key="extruder" value="{cfg["extruder"]}"/>',
+            f'      <metadata key="matrix" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1"/>',
+            f'      <metadata key="source_file" value="{model_id}_batch.3mf"/>',
+            f'      <metadata key="source_object_id" value="{cfg["object_id"] - 1}"/>',
+            f'      <metadata key="source_volume_id" value="0"/>',
+            f'      <metadata key="source_offset_x" value="0"/>',
+            f'      <metadata key="source_offset_y" value="0"/>',
+            f'      <metadata key="source_offset_z" value="0"/>',
+            f'      <mesh_stat face_count="{cfg["face_count"]}"'
+            '  edges_fixed="0" degenerate_facets="0"'
+            '  facets_removed="0" facets_reversed="0" backwards_edges="0"/>',
+            '    </part>',
+        ]
+    out += [
+        '  </object>',
+        '  <plate>',
+        '    <metadata key="plater_id" value="1"/>',
+        '    <metadata key="plater_name" value=""/>',
+        '    <metadata key="locked" value="false"/>',
+        '    <metadata key="filament_map_mode" value="Auto For Flush"/>',
+        '    <model_instance>',
+        '      <metadata key="object_id" value="999"/>',
+        '      <metadata key="instance_id" value="0"/>',
+        '    </model_instance>',
+        '  </plate>',
+        '  <assemble>',
+        '   <assemble_item object_id="999" instance_id="0"'
+        '  transform="1 0 0 0 1 0 0 0 1 0 0 0" offset="0 0 0" />',
+        '  </assemble>',
+        '</config>',
+    ]
+    return '\n'.join(out).encode('utf-8')
 
 
 @router.get("/models/{model_id}/config")
@@ -672,4 +914,214 @@ async def generate_parametric_model(request: Request, model_id: str):
         "success": True,
         "job_id": job_id,
         "files": {"model": f"/static/generated/{job_id}/{output_filename}"},
+    }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# BATCH: gera um 3MF com múltiplos letreiros na mesma prancheta
+# ─────────────────────────────────────────────────────────────────────────────
+
+@router.get("/batch_status/{batch_id}")
+async def batch_status(batch_id: str):
+    """Retorna o estado atual de um job de batch."""
+    with _batch_jobs_lock:
+        job = _batch_jobs.get(batch_id)
+    if not job:
+        return JSONResponse(status_code=404, content={"error": "Job não encontrado"})
+    return job
+
+
+@router.post("/generate_batch/{model_id}")
+async def generate_batch(request: Request, model_id: str):
+    """
+    Gera um 3MF único com N instâncias do modelo, cada uma com um nome diferente.
+    Body: multipart/form-data com:
+      - names: JSON array string, ex: '[{"nome":"ALICE"},{"nome":"PEDRO"}]'
+      - todos os outros parâmetros do modelo (exceto text_line_1, que é substituído)
+    Retorna imediatamente { batch_id } e processa em background.
+    """
+    scad_path = os.path.join(MODELS_DIR, model_id, "model.scad")
+    if not os.path.exists(scad_path):
+        return JSONResponse(status_code=404, content={"error": "Model not found"})
+
+    config_path = os.path.join(MODELS_DIR, model_id, "config.json")
+    model_config = {}
+    if os.path.exists(config_path):
+        with open(config_path, "r", encoding="utf-8") as f:
+            model_config = json.load(f)
+
+    parts_to_render = model_config.get("parts", ["base", "letters"])
+    font_path = os.path.join(MODELS_DIR, model_id)
+
+    form_data = await request.form()
+
+    # Lê e valida a lista de nomes
+    raw_names = form_data.get("names", "[]")
+    try:
+        names_list = json.loads(raw_names)
+        names = [str(item.get("nome", "")).strip() for item in names_list if item.get("nome")]
+    except Exception:
+        return JSONResponse(status_code=400, content={"error": "Campo 'names' inválido. Esperado JSON array de objetos com 'nome'."})
+
+    if not names:
+        return JSONResponse(status_code=400, content={"error": "Lista de nomes vazia."})
+
+    # Parâmetros base (sem 'names' e sem 'text_line_1' — será injetado por nome)
+    skip_keys = {"names", "text_line_1"}
+    base_params = {k: v for k, v in form_data.items()
+                   if isinstance(v, str) and k not in skip_keys}
+
+    # Gera batch_id único para este job
+    hasher = hashlib.md5()
+    hasher.update(model_id.encode())
+    hasher.update(raw_names.encode())
+    for k, v in sorted(base_params.items()):
+        hasher.update(f"{k}={v}".encode())
+    batch_id = hasher.hexdigest()[:16]
+
+    batch_dir = os.path.join(GENERATED_DIR, f"batch_{batch_id}")
+    batch_3mf = os.path.join(batch_dir, f"{model_id}_batch.3mf")
+
+    # Cache hit
+    if os.path.exists(batch_3mf):
+        print(f"[BATCH CACHE HIT] batch_id={batch_id}", flush=True)
+        return {
+            "batch_id": batch_id,
+            "status": "done",
+            "file": f"/static/generated/batch_{batch_id}/{model_id}_batch.3mf",
+            "total": len(names),
+            "done": len(names),
+        }
+
+    # Inicializa estado do job
+    with _batch_jobs_lock:
+        _batch_jobs[batch_id] = {
+            "status": "running",
+            "total": len(names),
+            "done": 0,
+            "errors": [],
+            "file": None,
+        }
+
+    _cleanup_old_jobs()
+    os.makedirs(batch_dir, exist_ok=True)
+
+    def _run_batch():
+        """Executa toda a renderização em background."""
+        # Monta pares (nome, scad_args) — nomes duplicados reutilizam STLs via hash
+        render_tasks = []
+        seen: dict = {}  # nome_hash → job_subdir
+
+        for name in names:
+            # Hash individual para cache de peça
+            h = hashlib.md5()
+            h.update(model_id.encode())
+            h.update(name.encode())
+            for k, v in sorted(base_params.items()):
+                h.update(f"{k}={v}".encode())
+            name_hash = h.hexdigest()[:12]
+
+            if name_hash in seen:
+                # Duplicado — aponta para o mesmo diretório
+                render_tasks.append((name, name_hash, seen[name_hash], True))
+            else:
+                seen[name_hash] = name_hash
+                render_tasks.append((name, name_hash, name_hash, False))
+
+        # Diretórios individuais de cache dentro de batch_dir
+        def render_one(name: str, name_hash: str, src_hash: str, is_dup: bool):
+            piece_dir = os.path.join(batch_dir, name_hash)
+            os.makedirs(piece_dir, exist_ok=True)
+
+            stl_paths = {}
+            for part in parts_to_render:
+                out = os.path.join(piece_dir, f"{model_id}_{part}.stl")
+                stl_paths[part] = out
+
+                if os.path.exists(out):
+                    continue  # cache hit da peça
+
+                scad_args = ["-D", _to_scad_assignment("text_line_1", name),
+                             "-D", 'text_line_2=""']
+                for k, v in base_params.items():
+                    scad_args.extend(["-D", _to_scad_assignment(k, v)])
+
+                cmd = ["openscad", "-o", out,
+                       *scad_args,
+                       "-D", f'part="{part}"',
+                       scad_path]
+                env = os.environ.copy()
+                env["OPENSCAD_FONT_PATH"] = font_path
+                try:
+                    subprocess.run(cmd, check=True, capture_output=True,
+                                   text=True, env=env, timeout=OPENSCAD_TIMEOUT)
+                except Exception as exc:
+                    return name, None, str(exc)
+
+            return name, stl_paths, None
+
+        # Submete todas as tarefas únicas em paralelo (máx 4 workers)
+        unique_tasks = [(n, nh, sh, d) for n, nh, sh, d in render_tasks if not d]
+        dup_tasks    = [(n, nh, sh, d) for n, nh, sh, d in render_tasks if d]
+
+        results: dict = {}  # name_hash → stl_paths
+        MAX_WORKERS = 4
+
+        with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
+            futures = {pool.submit(render_one, n, nh, sh, False): nh
+                       for n, nh, sh, _ in unique_tasks}
+            for future in as_completed(futures):
+                name_hash = futures[future]
+                name, stl_paths, err = future.result()
+                if err:
+                    with _batch_jobs_lock:
+                        _batch_jobs[batch_id]["errors"].append(f"{name}: {err}")
+                else:
+                    results[name_hash] = stl_paths
+                with _batch_jobs_lock:
+                    _batch_jobs[batch_id]["done"] += 1
+                print(f"[BATCH] {name} done ({_batch_jobs[batch_id]['done']}/{len(unique_tasks)})", flush=True)
+
+        # Duplicados: apenas incrementa contagem
+        for n, nh, sh, _ in dup_tasks:
+            results[nh] = results.get(sh, {})
+            with _batch_jobs_lock:
+                _batch_jobs[batch_id]["done"] += 1
+
+        # Verifica se houve erros fatais
+        with _batch_jobs_lock:
+            errs = list(_batch_jobs[batch_id]["errors"])
+        if len(errs) == len(names):
+            with _batch_jobs_lock:
+                _batch_jobs[batch_id]["status"] = "error"
+            return
+
+        # ── Monta 3MF único com todos os modelos ─────────────────────────
+        try:
+            _assemble_batch_3mf(
+                model_id=model_id,
+                render_tasks=render_tasks,
+                results=results,
+                parts_to_render=parts_to_render,
+                batch_dir=batch_dir,
+                output_path=batch_3mf,
+            )
+            with _batch_jobs_lock:
+                _batch_jobs[batch_id]["status"] = "done"
+                _batch_jobs[batch_id]["file"] = f"/static/generated/batch_{batch_id}/{model_id}_batch.3mf"
+        except Exception as exc:
+            print(f"[BATCH ASSEMBLE ERROR] {repr(exc)}", flush=True)
+            with _batch_jobs_lock:
+                _batch_jobs[batch_id]["status"] = "error"
+                _batch_jobs[batch_id]["errors"].append(f"Montagem 3MF: {repr(exc)}")
+
+    # Dispara background thread e retorna imediatamente
+    t = threading.Thread(target=_run_batch, daemon=True)
+    t.start()
+
+    return {
+        "batch_id": batch_id,
+        "status": "running",
+        "total": len(names),
+        "done": 0,
     }
