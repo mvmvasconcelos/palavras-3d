@@ -286,6 +286,7 @@ def _pack_bambu_3mf(
     parts_to_render: list,
     job_dir: str,
     mf_filepath: str,
+    extruder_overrides: dict = None,  # ex: {"base": 3, "letters": 2}
 ) -> bool:
     """
     Cria um 3MF com metadados completos do Bambu Studio se existir
@@ -332,11 +333,12 @@ def _pack_bambu_3mf(
         defn = part_defs.get(part, {})
         face_count = len(mesh.faces)
         total_faces += face_count
+        ov = extruder_overrides or {}
         part_cfgs.append({
             'object_id':      idx + 1,
             'scad_name':      part,
             'display_name':   defn.get('display_name', part),
-            'extruder':       defn.get('extruder', 1),
+            'extruder':       ov.get(part, defn.get('extruder', 1)),
             'face_count':     face_count,
             'z_offset':       0.0,
             'source_offset_z': float(mesh.bounds[0][2]),
@@ -350,14 +352,22 @@ def _pack_bambu_3mf(
 
     # --- Empacota o ZIP (.3mf) ---
     static_dir = os.path.join(template_dir, 'static')
+    # Estes arquivos são gerados dinamicamente — não copiar do template estático
+    _dynamic_entries = {
+        '3D/Objects/object_1.model',
+        '3D/3dmodel.model',
+        'Metadata/model_settings.config',
+    }
     try:
         with zipfile.ZipFile(mf_filepath, 'w', zipfile.ZIP_DEFLATED) as zf:
-            # Arquivos estáticos do template
+            # Arquivos estáticos do template (exceto os dinâmicos)
             if os.path.isdir(static_dir):
                 for root, _dirs, files in os.walk(static_dir):
                     for fname in files:
                         abs_path = os.path.join(root, fname)
                         arc_path = os.path.relpath(abs_path, static_dir).replace('\\', '/')
+                        if arc_path in _dynamic_entries:
+                            continue
                         zf.write(abs_path, arc_path)
             # Arquivos dinâmicos (gerados por job)
             zf.writestr('3D/Objects/object_1.model', obj1_xml)
@@ -378,7 +388,9 @@ def _pack_bambu_3mf(
 
 PLATE_W = 223.0   # mm
 PLATE_H = 223.0   # mm
-BATCH_GAP = 5.0   # mm de margem entre peças
+# O bounding box medido pelo trimesh não inclui o outline_margin da base (~2.3mm).
+# BATCH_GAP precisa cobrir 2× esse raio de arredondamento + folga visual.
+BATCH_GAP = 15.0  # mm de margem entre peças
 
 
 def _layout_rects(sizes: list[tuple[float, float]]) -> list[tuple[float, float]]:
@@ -509,12 +521,19 @@ def _assemble_batch_3mf(
 
     # ── 4. Empacota o ZIP (.3mf) ─────────────────────────────────────────
     static_dir = os.path.join(template_dir, "static")
+    _dynamic_entries = {
+        '3D/Objects/object_1.model',
+        '3D/3dmodel.model',
+        'Metadata/model_settings.config',
+    }
     with zipfile.ZipFile(output_path, "w", zipfile.ZIP_DEFLATED) as zf:
         if os.path.isdir(static_dir):
             for root, _dirs, files in os.walk(static_dir):
                 for fname in files:
                     abs_p = os.path.join(root, fname)
                     arc_p = os.path.relpath(abs_p, static_dir).replace("\\", "/")
+                    if arc_p in _dynamic_entries:
+                        continue
                     zf.write(abs_p, arc_p)
         zf.writestr("3D/Objects/object_1.model", obj1_xml)
         zf.writestr("3D/3dmodel.model", model3d_xml)
@@ -656,6 +675,23 @@ def _inject_char_positions(scad_args: list, params: dict, model_dir: str) -> lis
     return args
 
 
+@router.post("/clear_cache")
+async def clear_cache():
+    """Remove todos os arquivos e diretórios gerados em static/generated."""
+    removed = 0
+    if os.path.isdir(GENERATED_DIR):
+        for entry in os.scandir(GENERATED_DIR):
+            try:
+                if entry.is_dir():
+                    shutil.rmtree(entry.path)
+                else:
+                    os.remove(entry.path)
+                removed += 1
+            except Exception:
+                pass
+    return {"removed": removed}
+
+
 @router.get("/models/{model_id}/config")
 async def get_model_config(model_id: str):
     """
@@ -714,7 +750,7 @@ async def generate_model(
         print(f"[CACHE HIT] job_id={job_id}", flush=True)
         cached_urls = {p: f"/static/generated/{job_id}/{model_id}_{p}.stl" for p in parts_to_render}
         cached_urls["3mf"] = f"/static/generated/{job_id}/{mf_filename}"
-        return {"success": True, "job_id": job_id, "files": cached_urls}
+        return {"success": True, "job_id": job_id, "files": cached_urls, "from_cache": True}
 
     # Cache miss: cria o diretório do job e processa
     _cleanup_old_jobs()
@@ -825,7 +861,7 @@ async def generate_model(
         except Exception as e:
             print(f"[FALLBACK] Erro ao exportar 3MF via trimesh: {repr(e)}")
 
-    return {"success": True, "job_id": job_id, "files": generated_urls}
+    return {"success": True, "job_id": job_id, "files": generated_urls, "from_cache": False}
 
 
 @router.post("/generate_parametric/{model_id}")
@@ -876,7 +912,7 @@ async def generate_parametric_model(request: Request, model_id: str):
             print(f"[CACHE HIT parametric 3mf] job_id={job_id}", flush=True)
             cached_urls = {p: f"/static/generated/{job_id}/{model_id}_{p}.stl" for p in parts_to_render}
             cached_urls["3mf"] = f"/static/generated/{job_id}/{mf_filename}"
-            return {"success": True, "job_id": job_id, "files": cached_urls}
+            return {"success": True, "job_id": job_id, "files": cached_urls, "from_cache": True}
 
         _cleanup_old_jobs()
         os.makedirs(job_dir, exist_ok=True)
@@ -950,7 +986,7 @@ async def generate_parametric_model(request: Request, model_id: str):
             except Exception as e:
                 print(f"[PARAMETRIC FALLBACK] Erro ao exportar 3MF via trimesh: {repr(e)}")
 
-        return {"success": True, "job_id": job_id, "files": generated_urls}
+        return {"success": True, "job_id": job_id, "files": generated_urls, "from_cache": False}
 
     # ── Fluxo STL único (original) ────────────────────────────────────────
     output_filename = f"{model_id}.stl"
@@ -962,6 +998,7 @@ async def generate_parametric_model(request: Request, model_id: str):
             "success": True,
             "job_id": job_id,
             "files": {"model": f"/static/generated/{job_id}/{output_filename}"},
+            "from_cache": True,
         }
 
     _cleanup_old_jobs()
@@ -999,6 +1036,7 @@ async def generate_parametric_model(request: Request, model_id: str):
         "success": True,
         "job_id": job_id,
         "files": {"model": f"/static/generated/{job_id}/{output_filename}"},
+        "from_cache": False,
     }
 
 
@@ -1045,6 +1083,17 @@ async def generate_batch(request: Request, model_id: str):
     try:
         names_list = json.loads(raw_names)
         names = [str(item.get("nome", "")).strip() for item in names_list if item.get("nome")]
+        # extrusor_overrides: lista paralela a names, cada item é {} ou {"base":N, "letters":N}
+        names_extruders = []
+        for item in names_list:
+            if not item.get("nome"):
+                continue
+            ov = {}
+            if "extrusor_base" in item:
+                ov["base"] = int(item["extrusor_base"])
+            if "extrusor_letras" in item:
+                ov["letters"] = int(item["extrusor_letras"])
+            names_extruders.append(ov)
     except Exception:
         return JSONResponse(status_code=400, content={"error": "Campo 'names' inválido. Esperado JSON array de objetos com 'nome'."})
 
@@ -1065,17 +1114,18 @@ async def generate_batch(request: Request, model_id: str):
     batch_id = hasher.hexdigest()[:16]
 
     batch_dir = os.path.join(GENERATED_DIR, f"batch_{batch_id}")
-    batch_3mf = os.path.join(batch_dir, f"{model_id}_batch.3mf")
+    batch_zip = os.path.join(batch_dir, f"{model_id}_batch.zip")
 
     # Cache hit
-    if os.path.exists(batch_3mf):
+    if os.path.exists(batch_zip):
         print(f"[BATCH CACHE HIT] batch_id={batch_id}", flush=True)
         return {
             "batch_id": batch_id,
             "status": "done",
-            "file": f"/static/generated/batch_{batch_id}/{model_id}_batch.3mf",
+            "file": f"/static/generated/batch_{batch_id}/{model_id}_batch.zip",
             "total": len(names),
             "done": len(names),
+            "from_cache": True,
         }
 
     # Inicializa estado do job
@@ -1097,8 +1147,8 @@ async def generate_batch(request: Request, model_id: str):
         render_tasks = []
         seen: dict = {}  # nome_hash → job_subdir
 
-        for name in names:
-            # Hash individual para cache de peça
+        for name, extruder_ov in zip(names, names_extruders):
+            # Hash individual para cache de peça (apenas geometria, não extrusor)
             h = hashlib.md5()
             h.update(model_id.encode())
             h.update(name.encode())
@@ -1107,14 +1157,14 @@ async def generate_batch(request: Request, model_id: str):
             name_hash = h.hexdigest()[:12]
 
             if name_hash in seen:
-                # Duplicado — aponta para o mesmo diretório
-                render_tasks.append((name, name_hash, seen[name_hash], True))
+                # Duplicado — STLs reutilizados, mas 3MF gerado por nome (extrusor pode diferir)
+                render_tasks.append((name, name_hash, seen[name_hash], True, extruder_ov))
             else:
                 seen[name_hash] = name_hash
-                render_tasks.append((name, name_hash, name_hash, False))
+                render_tasks.append((name, name_hash, name_hash, False, extruder_ov))
 
         # Diretórios individuais de cache dentro de batch_dir
-        def render_one(name: str, name_hash: str, src_hash: str, is_dup: bool):
+        def render_one(name: str, name_hash: str, src_hash: str, is_dup: bool, extruder_ov: dict = None):
             piece_dir = os.path.join(batch_dir, name_hash)
             os.makedirs(piece_dir, exist_ok=True)
 
@@ -1156,15 +1206,15 @@ async def generate_batch(request: Request, model_id: str):
             return name, stl_paths, None
 
         # Submete todas as tarefas únicas em paralelo (máx 4 workers)
-        unique_tasks = [(n, nh, sh, d) for n, nh, sh, d in render_tasks if not d]
-        dup_tasks    = [(n, nh, sh, d) for n, nh, sh, d in render_tasks if d]
+        unique_tasks = [(n, nh, sh, d, ov) for n, nh, sh, d, ov in render_tasks if not d]
+        dup_tasks    = [(n, nh, sh, d, ov) for n, nh, sh, d, ov in render_tasks if d]
 
         results: dict = {}  # name_hash → stl_paths
         MAX_WORKERS = 4
 
         with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
             futures = {pool.submit(render_one, n, nh, sh, False): nh
-                       for n, nh, sh, _ in unique_tasks}
+                       for n, nh, sh, _, _ov in unique_tasks}
             for future in as_completed(futures):
                 name_hash = futures[future]
                 name, stl_paths, err = future.result()
@@ -1178,7 +1228,7 @@ async def generate_batch(request: Request, model_id: str):
                 print(f"[BATCH] {name} done ({_batch_jobs[batch_id]['done']}/{len(unique_tasks)})", flush=True)
 
         # Duplicados: apenas incrementa contagem
-        for n, nh, sh, _ in dup_tasks:
+        for n, nh, sh, _, _ov in dup_tasks:
             results[nh] = results.get(sh, {})
             with _batch_jobs_lock:
                 _batch_jobs[batch_id]["done"] += 1
@@ -1191,24 +1241,44 @@ async def generate_batch(request: Request, model_id: str):
                 _batch_jobs[batch_id]["status"] = "error"
             return
 
-        # ── Monta 3MF único com todos os modelos ─────────────────────────
+        # ── Gera um 3MF por nome e zipa tudo ─────────────────────────────
         try:
-            _assemble_batch_3mf(
-                model_id=model_id,
-                render_tasks=render_tasks,
-                results=results,
-                parts_to_render=parts_to_render,
-                batch_dir=batch_dir,
-                output_path=batch_3mf,
-            )
+            zip_path = os.path.join(batch_dir, f"{model_id}_batch.zip")
+            with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+                arc_name_count: dict = {}
+                for name, name_hash, src_hash, is_dup, extruder_ov in render_tasks:
+                    piece_hash = src_hash if is_dup else name_hash
+                    stl_paths = results.get(piece_hash)
+                    if not stl_paths:
+                        continue
+
+                    safe_name = "".join(c if c.isalnum() or c in " _-" else "_" for c in name).strip()
+                    # 3MF gerado por nome (extrusor pode diferir entre pessoas com mesmo nome)
+                    mf_path = os.path.join(batch_dir, f"{safe_name}_{name_hash[:6]}.3mf")
+                    piece_dir = os.path.join(batch_dir, piece_hash)
+                    ok = _pack_bambu_3mf(model_id, parts_to_render, piece_dir, mf_path,
+                                         extruder_overrides=extruder_ov if extruder_ov else None)
+                    if not ok:
+                        print(f"[BATCH ZIP] _pack_bambu_3mf falhou para '{name}'", flush=True)
+                        continue
+
+                    # Desambigua nomes iguais: Miguel.3mf, Miguel_2.3mf ...
+                    arc_base = safe_name
+                    count = arc_name_count.get(arc_base, 0) + 1
+                    arc_name_count[arc_base] = count
+                    arc_name = f"{arc_base}.3mf" if count == 1 else f"{arc_base}_{count}.3mf"
+
+                    zf.write(mf_path, arc_name)
+                    print(f"[BATCH ZIP] adicionado: {arc_name}", flush=True)
+
             with _batch_jobs_lock:
                 _batch_jobs[batch_id]["status"] = "done"
-                _batch_jobs[batch_id]["file"] = f"/static/generated/batch_{batch_id}/{model_id}_batch.3mf"
+                _batch_jobs[batch_id]["file"] = f"/static/generated/batch_{batch_id}/{model_id}_batch.zip"
         except Exception as exc:
             print(f"[BATCH ASSEMBLE ERROR] {repr(exc)}", flush=True)
             with _batch_jobs_lock:
                 _batch_jobs[batch_id]["status"] = "error"
-                _batch_jobs[batch_id]["errors"].append(f"Montagem 3MF: {repr(exc)}")
+                _batch_jobs[batch_id]["errors"].append(f"Montagem ZIP: {repr(exc)}")
 
     # Dispara background thread e retorna imediatamente
     t = threading.Thread(target=_run_batch, daemon=True)

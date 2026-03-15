@@ -3,12 +3,12 @@
     {
       "scad_name":    "base",
       "display_name": "Base",
-      "extruder":     1
+      "extruder":     3
     },
     {
       "scad_name":    "letters",
       "display_name": "Letras",
-      "extruder":     2
+      "extruder":     1
     }
   ]
 }

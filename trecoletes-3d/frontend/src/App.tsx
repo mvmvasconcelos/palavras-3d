@@ -867,6 +867,7 @@ function NameTopper() {
     const [baseUrl, setBaseUrl] = React.useState<string | null>(null);
     const [lettersUrl, setLettersUrl] = React.useState<string | null>(null);
     const [tmfUrl, setTmfUrl] = React.useState<string | null>(null);
+    const [fromCache, setFromCache] = React.useState<boolean | null>(null);
     const [error, setError] = React.useState<string | null>(null);
     // Controla quais seções estão abertas (abertas por padrão: Linha 2 e Ajustes Finos fechadas)
     const [openSections, setOpenSections] = React.useState<Record<string, boolean>>({});
@@ -876,8 +877,26 @@ function NameTopper() {
     const [batchId, setBatchId] = React.useState<string | null>(null);
     const [batchProgress, setBatchProgress] = React.useState<{done: number, total: number} | null>(null);
     const [batchTmfUrl, setBatchTmfUrl] = React.useState<string | null>(null);
+    const [batchFromCache, setBatchFromCache] = React.useState<boolean | null>(null);
     const batchFileRef = React.useRef<HTMLInputElement>(null);
     const pollRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
+    const [isClearingCache, setIsClearingCache] = React.useState(false);
+
+    const handleClearCache = async () => {
+        setIsClearingCache(true);
+        try {
+            await axios.post('http://localhost:8000/api/clear_cache');
+            setTmfUrl(null);
+            setBaseUrl(null);
+            setLettersUrl(null);
+            setFromCache(null);
+            setBatchTmfUrl(null);
+            setBatchFromCache(null);
+            setBatchProgress(null);
+            setBatchId(null);
+        } catch { /* silencioso */ }
+        setIsClearingCache(false);
+    };
 
     React.useEffect(() => {
         axios.get('http://localhost:8000/api/models/name_topper/config')
@@ -911,6 +930,7 @@ function NameTopper() {
         setBaseUrl(null);
         setLettersUrl(null);
         setTmfUrl(null);
+        setFromCache(null);
         try {
             const form = new FormData();
             Object.entries(params).forEach(([k, v]) => form.append(k, String(v ?? '')));
@@ -920,6 +940,7 @@ function NameTopper() {
                 if (res.data.files.base)    setBaseUrl(`${host}${res.data.files.base}`);
                 if (res.data.files.letters) setLettersUrl(`${host}${res.data.files.letters}`);
                 if (res.data.files['3mf'])  setTmfUrl(`${host}${res.data.files['3mf']}`);
+                setFromCache(res.data.from_cache ?? false);
             }
         } catch (err: any) {
             setError(err?.response?.data?.error ?? 'Erro desconhecido');
@@ -963,6 +984,7 @@ function NameTopper() {
         setBatchId(null);
         setBatchProgress({ done: 0, total: batchNames.length });
         setBatchTmfUrl(null);
+        setBatchFromCache(null);
         setError(null);
         try {
             const form = new FormData();
@@ -979,6 +1001,7 @@ function NameTopper() {
             if (res.data.status === 'done') {
                 setBatchProgress({ done: res.data.total, total: res.data.total });
                 setBatchTmfUrl(`http://localhost:8000${res.data.file}`);
+                setBatchFromCache(res.data.from_cache ?? false);
                 return;
             }
 
@@ -991,6 +1014,7 @@ function NameTopper() {
                         clearInterval(pollRef.current!);
                         pollRef.current = null;
                         setBatchTmfUrl(`http://localhost:8000${job.file}`);
+                        setBatchFromCache(false);  // novo processamento
                     } else if (job.status === 'error') {
                         clearInterval(pollRef.current!);
                         pollRef.current = null;
@@ -1144,13 +1168,26 @@ function NameTopper() {
                         )}
                     </div>
                     <div className="p-4 border-t border-neutral-800 bg-neutral-950 space-y-3">
-                        <button
-                            onClick={handleGenerate}
-                            disabled={isGenerating || !config}
-                            className="w-full py-3 bg-violet-600 hover:bg-violet-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold rounded shadow-lg shadow-violet-900/40 transition-all"
-                        >
-                            {isGenerating ? 'Gerando...' : 'Gerar Modelo 3D'}
-                        </button>
+                        <div className="flex gap-2">
+                            <button
+                                onClick={handleGenerate}
+                                disabled={isGenerating || !config}
+                                className="flex-1 py-3 bg-violet-600 hover:bg-violet-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold rounded shadow-lg shadow-violet-900/40 transition-all"
+                            >
+                                {isGenerating ? 'Gerando...' : 'Gerar Modelo 3D'}
+                            </button>
+                            <button
+                                onClick={handleClearCache}
+                                disabled={isClearingCache || isGenerating}
+                                title="Limpar cache — força nova geração na próxima vez"
+                                className="px-3 py-3 bg-neutral-800 hover:bg-red-900 disabled:opacity-40 text-neutral-400 hover:text-red-300 rounded border border-neutral-700 hover:border-red-700 transition-all"
+                            >
+                                {isClearingCache
+                                    ? <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                                    : <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                }
+                            </button>
+                        </div>
 
                         {/* Batch generation */}
                         <div className="border-t border-neutral-800 pt-3 space-y-2">
@@ -1197,14 +1234,21 @@ function NameTopper() {
                                 </div>
                             )}
                             {batchTmfUrl && (
-                                <button
-                                    type="button"
-                                    onClick={() => downloadBlob(batchTmfUrl!, 'name_topper_lote.3mf')}
-                                    className="w-full py-2 flex items-center justify-center gap-2 text-xs bg-emerald-700 hover:bg-emerald-600 text-white font-semibold rounded transition-all"
-                                >
-                                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
-                                    Baixar Lote (3MF)
-                                </button>
+                                <div className="space-y-1.5">
+                                    {batchFromCache !== null && (
+                                        <p className={`text-xs text-center font-medium ${batchFromCache ? 'text-amber-400' : 'text-emerald-400'}`}>
+                                            {batchFromCache ? '\u26a1 Do cache (mesmos par\u00e2metros)' : '\u2714 Reci\u00e9m gerado'}
+                                        </p>
+                                    )}
+                                    <button
+                                        type="button"
+                                        onClick={() => downloadBlob(batchTmfUrl!, 'name_topper_lote.zip')}
+                                        className="w-full py-2 flex items-center justify-center gap-2 text-xs bg-emerald-700 hover:bg-emerald-600 text-white font-semibold rounded transition-all"
+                                    >
+                                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                                        Baixar Lote (ZIP com 3MFs)
+                                    </button>
+                                </div>
                             )}
                         </div>
                     </div>
@@ -1224,7 +1268,12 @@ function NameTopper() {
                         </div>
                     </div>
                     {tmfUrl && (
-                        <div className="flex-shrink-0 flex justify-center">
+                        <div className="flex-shrink-0 flex flex-col items-center gap-1">
+                            {fromCache !== null && (
+                                <p className={`text-xs font-medium ${fromCache ? 'text-amber-400' : 'text-emerald-400'}`}>
+                                    {fromCache ? '\u26a1 Do cache (mesmos par\u00e2metros)' : '\u2714 Reci\u00e9m gerado'}
+                                </p>
+                            )}
                             <button
                                 onClick={() => downloadBlob(tmfUrl!, 'name_topper_all.3mf')}
                                 className="flex items-center gap-2 px-6 py-2.5 bg-violet-600 hover:bg-violet-500 text-white font-semibold rounded-lg shadow-lg shadow-violet-900/40 transition-colors text-sm"

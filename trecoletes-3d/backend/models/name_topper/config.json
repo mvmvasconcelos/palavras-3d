@@ -44,8 +44,8 @@
             "parameters": [
                 { "id": "hole_orientation", "name": "Orientação do Furo", "type": "select",
                   "options": [
-                      { "value": "TOPBOTTOM", "label": "Vertical (Chaveiro/Topper)" },
                       { "value": "FRONTBACK", "label": "Horizontal (Passante)" },
+                      { "value": "TOPBOTTOM", "label": "Vertical (Chaveiro/Topper)" },
                       { "value": "NONE",      "label": "Sem Furo" }
                   ], "default": "TOPBOTTOM"
                 },
@@ -55,7 +55,7 @@
                       { "value": "HEXAGON", "label": "Hexágono" }
                   ], "default": "CIRCLE"
                 },
-                { "id": "hole_diameter", "name": "Diâmetro do Furo", "type": "range", "min": 1, "max": 20, "step": 0.1, "default": 7.8, "unit": "mm" }
+                { "id": "hole_diameter", "name": "Diâmetro do Furo", "type": "range", "min": 1, "max": 20, "step": 0.1, "default": 7.5, "unit": "mm" }
             ]
         }
     ]
