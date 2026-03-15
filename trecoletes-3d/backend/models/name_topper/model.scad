@@ -23,6 +23,11 @@ char_xs1 = [];   // Posições X de cada char (halign=left), ex: [-14.0, -9.0, .
 chars2   = "";   // Texto da linha 2 (vazio = não usa)
 char_xs2 = [];
 
+/*[Largura Máxima]*/
+// 0 = sem limite; >0 = o backend injeta scale_x para achatar o modelo
+max_width = 0;
+scale_x   = 1.0;   // injetado pelo backend quando max_width é atingido
+
 /*[Furação]*/
 hole_type        = "CIRCLE";          // "CIRCLE" | "HEXAGON"
 hole_orientation = "TOPBOTTOM";       // "TOPBOTTOM" | "FRONTBACK" | "NONE"
@@ -49,14 +54,31 @@ function _line_y(i) =
     (i == 0) ?  (_sizes[1] * line_spacing * 0.6) :
                -(_sizes[0] * line_spacing * 0.6);
 
-// ── Base: usa text() completo + outline_margin ────────────────────────────
-// outline_margin (2.3mm) expande a silhueta, cobrindo qualquer gap de even-odd.
-// Para a base, apenas a silhueta externa importa.
+// ── Base: usa as mesmas posições injetadas pelo backend ───────────────────
+// Ao usar char_xs (idêntico ao raised_letters), a silhueta da base acompanha
+// exatamente o layout real das letras, incluindo word_spacing ajustado.
 module base_2d() {
-    for (i = [0 : len(_lines) - 1])
-        translate([0, _line_y(i), 0])
-            text(_lines[i], size = _sizes[i], font = font_name,
-                 halign = text_halign, valign = "center", spacing = spacing);
+    if (len(chars1) > 0) {
+        // Linha 1: per-character (mesmas posições das letras em relevo)
+        for (i = [0 : len(chars1) - 1])
+            if (i < len(char_xs1))
+                translate([char_xs1[i], _line_y(0) - text_size_1/2, 0])
+                    text(chars1[i], size = text_size_1, font = font_name,
+                         halign = "left", valign = "baseline");
+        // Linha 2 (opcional)
+        if (len(chars2) > 0)
+            for (i = [0 : len(chars2) - 1])
+                if (i < len(char_xs2))
+                    translate([char_xs2[i], _line_y(1) - text_size_2/2, 0])
+                        text(chars2[i], size = text_size_2, font = font_name,
+                             halign = "left", valign = "baseline");
+    } else {
+        // Fallback: text() convencional (quando backend não injeta posições)
+        for (i = [0 : len(_lines) - 1])
+            translate([0, _line_y(i), 0])
+                text(_lines[i], size = _sizes[i], font = font_name,
+                     halign = text_halign, valign = "center", spacing = spacing);
+    }
 }
 
 module base_with_tunnel() {
@@ -118,11 +140,15 @@ module raised_letters() {
 // ── Dispatcher de partes ──────────────────────────────────────────────────
 part = "all";
 
-if (part == "all") {
-    color(base_color)    base_with_tunnel();
-    color(letters_color) raised_letters();
-} else if (part == "base") {
-    color(base_color) base_with_tunnel();
-} else if (part == "letters") {
-    color(letters_color) raised_letters();
+// scale_x < 1 quando o backend calculou que o modelo ultrapassa max_width;
+// resultado: largura reduzida mantendo altura (Z) intacta.
+scale([scale_x, 1, 1]) {
+    if (part == "all") {
+        color(base_color)    base_with_tunnel();
+        color(letters_color) raised_letters();
+    } else if (part == "base") {
+        color(base_color) base_with_tunnel();
+    } else if (part == "letters") {
+        color(letters_color) raised_letters();
+    }
 }

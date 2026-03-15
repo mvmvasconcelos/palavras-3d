@@ -16,10 +16,11 @@ from app.api._svg_normalize import normalize_svg_to_origin
 from fontTools.ttLib import TTFont
 
 
-def _compute_char_positions(text: str, font_path: str, size_mm: float, spacing: float = 1.0) -> list[float]:
+def _compute_char_positions(text: str, font_path: str, size_mm: float, spacing: float = 1.0, word_spacing: float = 1.0) -> list[float]:
     """
     Retorna lista de posições X (mm) do início de cada caractere, centradas em 0.
     Usa os advance widths reais da fonte para posicionamento preciso.
+    word_spacing escala apenas o avanço do caractere espaço (' '), independente de spacing.
     """
     font = TTFont(font_path)
     cap_h: int = font['OS/2'].sCapHeight or font['head'].unitsPerEm
@@ -32,7 +33,8 @@ def _compute_char_positions(text: str, font_path: str, size_mm: float, spacing: 
         gname = cmap.get(ord(char), '.notdef')
         if gname not in hmtx:
             gname = '.notdef'
-        advs.append(hmtx[gname][0] * scale * spacing)
+        factor = word_spacing if char == ' ' else spacing
+        advs.append(hmtx[gname][0] * scale * factor)
 
     total_w = sum(advs)
     start_x = -total_w / 2
@@ -633,6 +635,10 @@ def _inject_char_positions(scad_args: list, params: dict, model_dir: str) -> lis
     e injeta como parâmetros SCAD (chars1, char_xs1, chars2, char_xs2).
     O model.scad renderiza cada caractere individualmente em 3D, evitando o
     problema de furos causado pela regra even-odd do OpenSCAD em letras sobrepostas.
+
+    Quando max_width > 0 e a largura natural do modelo (texto + outline_margin)
+    exceder esse valor, injeta scale_x < 1 para que o .scad achate o modelo
+    somente em X, mantendo altura (Z) intacta.
     """
     args = list(scad_args)
     font_name_val = params.get("font_name", "")
@@ -650,6 +656,8 @@ def _inject_char_positions(scad_args: list, params: dict, model_dir: str) -> lis
         return args  # sem TTF disponível, fallback para text() padrão
     ttf_path = os.path.join(model_dir, candidates[0])
 
+    max_line_w = 0.0  # largura máxima entre todas as linhas (sem outline_margin)
+
     for line_key, size_key, chars_param, xs_param in [
         ("text_line_1", "text_size_1", "chars1", "char_xs1"),
         ("text_line_2", "text_size_2", "chars2", "char_xs2"),
@@ -660,17 +668,45 @@ def _inject_char_positions(scad_args: list, params: dict, model_dir: str) -> lis
         try:
             size_mm = float(params.get(size_key, 12))
             spacing = float(params.get("spacing", 1.0))
+            word_spacing = float(params.get("word_spacing", 1.0))
         except ValueError:
-            size_mm, spacing = 12.0, 1.0
+            size_mm, spacing, word_spacing = 12.0, 1.0, 1.0
 
         try:
-            positions = _compute_char_positions(text_val, ttf_path, size_mm, spacing)
+            positions = _compute_char_positions(text_val, ttf_path, size_mm, spacing, word_spacing)
             xs_str = "[" + ",".join(f"{x}" for x in positions) + "]"
             args.extend(["-D", f'{chars_param}="{text_val}"'])
             args.extend(["-D", f'{xs_param}={xs_str}'])
             print(f"[CHAR_POS] {line_key}='{text_val}' xs={xs_str}", flush=True)
+
+            # Largura total desta linha (soma dos advances)
+            font = TTFont(ttf_path)
+            cap_h: int = font['OS/2'].sCapHeight or font['head'].unitsPerEm
+            scale = size_mm / cap_h
+            cmap = font.getBestCmap() or {}
+            hmtx = font['hmtx'].metrics
+            line_w = sum(
+                hmtx.get(cmap.get(ord(ch), '.notdef'), hmtx.get('.notdef', (0,)))[0]
+                * scale * (word_spacing if ch == ' ' else spacing)
+                for ch in text_val
+            )
+            max_line_w = max(max_line_w, line_w)
         except Exception as exc:
             print(f"[CHAR_POS] Erro para '{line_key}': {exc}", flush=True)
+
+    # ── Largura máxima ────────────────────────────────────────────────────
+    try:
+        max_width = float(params.get("max_width", 0))
+        outline_margin = float(params.get("outline_margin", 2.3))
+    except ValueError:
+        max_width, outline_margin = 0.0, 2.3
+
+    if max_width > 0 and max_line_w > 0:
+        natural_w = max_line_w + 2 * outline_margin
+        if natural_w > max_width:
+            scale_x = max_width / natural_w
+            args.extend(["-D", f"scale_x={round(scale_x, 6)}"])
+            print(f"[MAX_WIDTH] natural={natural_w:.2f}mm > max={max_width}mm → scale_x={scale_x:.4f}", flush=True)
 
     return args
 
