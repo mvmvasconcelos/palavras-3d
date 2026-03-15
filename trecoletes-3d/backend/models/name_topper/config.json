@@ -3,6 +3,7 @@
     "title": { "pt": "Letreiro Personalizado", "en": "Name Topper" },
     "output_format": "3mf",
     "parts": ["base", "letters"],
+    "text_to_svg": true,
     "parameters": [
         { "id": "text_line_1", "name": "Linha 1", "type": "text", "default": "Vinicius" },
         { "id": "text_size_1", "name": "Tamanho da Linha 1", "type": "range", "min": 5, "max": 50, "step": 1, "default": 12, "unit": "mm" },

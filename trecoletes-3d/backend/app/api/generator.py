@@ -13,6 +13,36 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from fastapi import APIRouter, UploadFile, Form, Request
 from fastapi.responses import JSONResponse
 from app.api._svg_normalize import normalize_svg_to_origin
+from fontTools.ttLib import TTFont
+
+
+def _compute_char_positions(text: str, font_path: str, size_mm: float, spacing: float = 1.0) -> list[float]:
+    """
+    Retorna lista de posições X (mm) do início de cada caractere, centradas em 0.
+    Usa os advance widths reais da fonte para posicionamento preciso.
+    """
+    font = TTFont(font_path)
+    cap_h: int = font['OS/2'].sCapHeight or font['head'].unitsPerEm
+    scale = size_mm / cap_h
+    cmap = font.getBestCmap() or {}
+    hmtx = font['hmtx'].metrics
+
+    advs: list[float] = []
+    for char in text:
+        gname = cmap.get(ord(char), '.notdef')
+        if gname not in hmtx:
+            gname = '.notdef'
+        advs.append(hmtx[gname][0] * scale * spacing)
+
+    total_w = sum(advs)
+    start_x = -total_w / 2
+    positions: list[float] = []
+    x = start_x
+    for adv in advs:
+        positions.append(round(x, 4))
+        x += adv
+    return positions
+
 
 # ── Estado global de jobs de batch (em memória) ──────────────────────────────
 # { job_id: { "total": N, "done": N, "errors": [], "status": "running"|"done"|"error", "file": url } }
@@ -578,6 +608,54 @@ def _xml_batch_model_settings(part_cfgs: list, total_faces: int, model_id: str, 
     return '\n'.join(out).encode('utf-8')
 
 
+def _inject_char_positions(scad_args: list, params: dict, model_dir: str) -> list:
+    """
+    Calcula a posição X de cada caractere usando os advance widths reais da fonte
+    e injeta como parâmetros SCAD (chars1, char_xs1, chars2, char_xs2).
+    O model.scad renderiza cada caractere individualmente em 3D, evitando o
+    problema de furos causado pela regra even-odd do OpenSCAD em letras sobrepostas.
+    """
+    args = list(scad_args)
+    font_name_val = params.get("font_name", "")
+    font_family = font_name_val.split(":")[0].lower()
+
+    try:
+        candidates = [
+            f for f in os.listdir(model_dir)
+            if f.lower().endswith(".ttf") and font_family in f.lower()
+        ]
+    except OSError:
+        candidates = []
+
+    if not candidates:
+        return args  # sem TTF disponível, fallback para text() padrão
+    ttf_path = os.path.join(model_dir, candidates[0])
+
+    for line_key, size_key, chars_param, xs_param in [
+        ("text_line_1", "text_size_1", "chars1", "char_xs1"),
+        ("text_line_2", "text_size_2", "chars2", "char_xs2"),
+    ]:
+        text_val = params.get(line_key, "")
+        if not text_val:
+            continue
+        try:
+            size_mm = float(params.get(size_key, 12))
+            spacing = float(params.get("spacing", 1.0))
+        except ValueError:
+            size_mm, spacing = 12.0, 1.0
+
+        try:
+            positions = _compute_char_positions(text_val, ttf_path, size_mm, spacing)
+            xs_str = "[" + ",".join(f"{x}" for x in positions) + "]"
+            args.extend(["-D", f'{chars_param}="{text_val}"'])
+            args.extend(["-D", f'{xs_param}={xs_str}'])
+            print(f"[CHAR_POS] {line_key}='{text_val}' xs={xs_str}", flush=True)
+        except Exception as exc:
+            print(f"[CHAR_POS] Erro para '{line_key}': {exc}", flush=True)
+
+    return args
+
+
 @router.get("/models/{model_id}/config")
 async def get_model_config(model_id: str):
     """
@@ -587,10 +665,10 @@ async def get_model_config(model_id: str):
     config_path = os.path.join(MODELS_DIR, model_id, "config.json")
     if not os.path.exists(config_path):
         return JSONResponse(status_code=404, content={"error": "Configuração não encontrada"})
-    
+
     with open(config_path, "r", encoding="utf-8") as f:
         config_data = json.load(f)
-        
+
     return config_data
 
 @router.post("/generate/{model_id}")
@@ -806,6 +884,13 @@ async def generate_parametric_model(request: Request, model_id: str):
         scad_args_base = []
         for key, value in text_params:
             scad_args_base.extend(["-D", _to_scad_assignment(key, value)])
+
+        # Injeta posições de caracteres (quando text_to_svg=true no config.json)
+        if model_config.get("text_to_svg"):
+            scad_args_base = _inject_char_positions(
+                scad_args_base, dict(text_params),
+                os.path.join(MODELS_DIR, model_id)
+            )
 
         def render_part(part: str) -> tuple:
             output_filename = f"{model_id}_{part}.stl"
@@ -1034,17 +1119,27 @@ async def generate_batch(request: Request, model_id: str):
             os.makedirs(piece_dir, exist_ok=True)
 
             stl_paths = {}
+
+            # Monta os args SCAD uma única vez para todas as partes
+            scad_args = ["-D", _to_scad_assignment("text_line_1", name),
+                         "-D", 'text_line_2=""']
+            for k, v in base_params.items():
+                scad_args.extend(["-D", _to_scad_assignment(k, v)])
+
+            # Injeta posições de caracteres para este nome
+            if model_config.get("text_to_svg"):
+                scad_args = _inject_char_positions(
+                    scad_args,
+                    {"text_line_1": name, "text_line_2": "", **base_params},
+                    font_path
+                )
+
             for part in parts_to_render:
                 out = os.path.join(piece_dir, f"{model_id}_{part}.stl")
                 stl_paths[part] = out
 
                 if os.path.exists(out):
                     continue  # cache hit da peça
-
-                scad_args = ["-D", _to_scad_assignment("text_line_1", name),
-                             "-D", 'text_line_2=""']
-                for k, v in base_params.items():
-                    scad_args.extend(["-D", _to_scad_assignment(k, v)])
 
                 cmd = ["openscad", "-o", out,
                        *scad_args,
