@@ -56,7 +56,7 @@ module base_2d() {
     for (i = [0 : len(_lines) - 1])
         translate([0, _line_y(i), 0])
             text(_lines[i], size = _sizes[i], font = font_name,
-                 halign = text_halign, valign = "baseline", spacing = spacing);
+                 halign = text_halign, valign = "center", spacing = spacing);
 }
 
 module base_with_tunnel() {
@@ -82,8 +82,11 @@ module base_with_tunnel() {
 // ── Letras em relevo: um extrude por caractere ────────────────────────────
 // Cada character é extrudado como sólido 3D independente.
 // Sólidos 3D sobrepostos se unem naturalmente — sem regra even-odd.
+// y = centro visual desejado (equivalente ao valign="center").
+// baseline = y - sz/2  →  alinha todas as letras na mesma linha de base
+// sem depender da bbox individual de cada glifo.
 module _one_char(ch_code, x, y, sz) {
-    translate([x, y, 0])
+    translate([x, y - sz/2, 0])
         linear_extrude(height = letter_height)
             text(ch_code, size = sz, font = font_name,
                  halign = "left", valign = "baseline");
