@@ -1003,7 +1003,16 @@ async def generate_parametric_model(request: Request, model_id: str):
             print(f"[PARAMETRIC 3MF ERROR] {errors}", flush=True)
             return JSONResponse(status_code=500, content={"error": "OpenSCAD falhou", "details": errors})
 
-        bambu_ok = _pack_bambu_3mf(model_id, parts_to_render, job_dir, mf_filepath)
+        ov = {}
+        for k, v in text_params:
+            if k == "extrusor_base":
+                try: ov["base"] = int(v)
+                except ValueError: pass
+            elif k == "extrusor_letras":
+                try: ov["letters"] = int(v)
+                except ValueError: pass
+
+        bambu_ok = _pack_bambu_3mf(model_id, parts_to_render, job_dir, mf_filepath, extruder_overrides=ov)
         if bambu_ok:
             generated_urls["3mf"] = f"/static/generated/{job_id}/{mf_filename}"
         else:
