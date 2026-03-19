@@ -776,8 +776,15 @@ async def generate_model(
         hasher.update(f"{k}={v}".encode())
     job_id = hasher.hexdigest()[:16]
 
+    # Parse config to find parts
+    config_path = os.path.join(MODELS_DIR, model_id, "config.json")
+    model_config = {}
+    if os.path.exists(config_path):
+        with open(config_path, "r", encoding="utf-8") as f:
+            model_config = json.load(f)
+    parts_to_render = model_config.get("parts", ["carimbo_base", "carimbo_arte", "cortador"])
+
     job_dir = os.path.join(GENERATED_DIR, job_id)
-    parts_to_render = ["carimbo_base", "carimbo_arte", "cortador"]
     mf_filename = f"{model_id}_all.3mf"
     mf_filepath = os.path.join(job_dir, mf_filename)
 
@@ -873,6 +880,8 @@ async def generate_model(
                 "carimbo_base": [100, 100, 255, 255],
                 "carimbo_arte": [255, 100, 100, 255],
                 "cortador":     [100, 255, 100, 255],
+                "base":         [100, 100, 255, 255],
+                "svg":          [255, 100, 100, 255],
             }
             name_map = {
                 "carimbo_base": "Base do Carimbo",

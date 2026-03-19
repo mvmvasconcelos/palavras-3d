@@ -661,6 +661,513 @@ function Generator() {
     );
 }
 
+
+
+function PonteiraLapisSvgGenerator() {
+    const [isGenerating, setIsGenerating] = useState(false);
+    const [carimbBaseUrl, setCarimbBaseUrl] = useState<string | null>(null);
+    const [carimbArteUrl, setCarimbArteUrl] = useState<string | null>(null);
+    const [cortadorUrl, setCortadorUrl] = useState<string | null>(null);
+    const [tmfUrl, setTmfUrl] = useState<string | null>(null);
+
+    // Viewer colors
+    const [artColor, setArtColor] = useState('#f5f0e8');    // raised art (bone white)
+    const [modelColor, setModelColor] = useState('#34d399'); // base + cutter (emerald)
+
+    const [svgFile, setSvgFile] = useState<File | null>(null);
+    const [svgText, setSvgText] = useState<string | null>(null);
+
+    // -- ESTADO DINÂMICO (Server-Driven UI) --
+    const [modelConfig, setModelConfig] = useState<any>(null);
+    const [dynamicParams, setDynamicParams] = useState<Record<string, any>>({});
+
+    // Busca a configuração do modelo ao carregar
+    React.useEffect(() => {
+        let isMounted = true;
+        const fetchConfig = async () => {
+            try {
+                const res = await axios.get('http://localhost:8000/api/models/ponteira_lapis_svg/config');
+                if (isMounted && res.data && res.data.parameters) {
+                    setModelConfig(res.data);
+                    const initialParams: Record<string, any> = {};
+                    res.data.parameters.forEach((param: any) => {
+                        initialParams[param.id] = param.default;
+                    });
+                    setDynamicParams(initialParams);
+                }
+            } catch (err) {
+                console.error("Erro ao carregar configuração do modelo:", err);
+            }
+        };
+        fetchConfig();
+        return () => { isMounted = false; };
+    }, []);
+
+    const [openSections, setOpenSections] = useState<Record<string, boolean>>({ 'Linha 2': false });
+    const toggleSection = (name: string) => setOpenSections(prev => ({ ...prev, [name]: !prev[name] }));
+
+    // Helper para atualizar parâmetros dinâmicos
+    const handleDynamicParamChange = (id: string, value: any) => {
+        setDynamicParams(prev => ({ ...prev, [id]: value }));
+    };
+
+    const renderParam = (p: any) => {
+        const val = dynamicParams[p.id] ?? p.default;
+        switch (p.type) {
+            case 'text':
+                return (
+                    <div key={p.id} className="space-y-1">
+                        <label className="text-sm text-neutral-400">{p.name}</label>
+                        <input
+                            type="text" value={val} placeholder={p.placeholder ?? ''}
+                            onChange={e => handleDynamicParamChange(p.id, e.target.value)}
+                            className="w-full bg-neutral-800 border border-neutral-700 rounded px-3 py-2 text-sm text-white focus:border-emerald-500 focus:outline-none"
+                        />
+                    </div>
+                );
+            case 'range':
+                return (
+                    <div key={p.id} className="space-y-1">
+                        <label className="flex justify-between text-sm">
+                            <span className="text-neutral-400">{p.name}</span>
+                            <span className="text-emerald-400 font-mono">
+                                {Number(val).toFixed(p.step < 1 ? 1 : 0)}{p.unit ? ` ${p.unit}` : ''}
+                            </span>
+                        </label>
+                        <input
+                            type="range" min={p.min} max={p.max} step={p.step} value={val}
+                            onChange={e => handleDynamicParamChange(p.id, parseFloat(e.target.value))}
+                            className="w-full accent-emerald-500"
+                        />
+                    </div>
+                );
+            case 'color':
+                const extField = p.id === 'base_color' ? 'extrusor_base' : 'extrusor_letras';
+                const extVal = dynamicParams[extField] ?? (p.id === 'base_color' ? 1 : 4);
+                return (
+                    <BambuColorPicker
+                        key={p.id}
+                        label={p.name}
+                        color={val}
+                        extruder={extVal}
+                        onChangeColor={(newCol) => handleDynamicParamChange(p.id, newCol)}
+                        onChangeExtruder={(newExt) => handleDynamicParamChange(extField, newExt)}
+                    />
+                );
+            case 'select':
+                return (
+                    <div key={p.id} className="space-y-1">
+                        <label className="text-sm text-neutral-400">{p.name}</label>
+                        <select
+                            value={val}
+                            onChange={e => handleDynamicParamChange(p.id, e.target.value)}
+                            className="w-full bg-neutral-800 border border-neutral-700 rounded px-3 py-2 text-sm text-white focus:border-emerald-500 focus:outline-none"
+                        >
+                            {p.options?.map((opt: any) => (
+                                <option key={opt.value} value={opt.value}>{opt.label}</option>
+                            ))}
+                        </select>
+                    </div>
+                );
+            case 'boolean':
+                return (
+                    <div key={p.id} className="space-y-2 pt-2 pb-1">
+                        <label className="flex items-start gap-3 cursor-pointer group">
+                            <div className="relative flex-shrink-0 flex items-center justify-center mt-0.5">
+                                <input
+                                    type="checkbox"
+                                    checked={Boolean(val)}
+                                    onChange={e => handleDynamicParamChange(p.id, e.target.checked)}
+                                    className="w-5 h-5 rounded border-neutral-600 bg-neutral-800 text-emerald-500 focus:ring-emerald-500 focus:ring-offset-neutral-900 transition-colors cursor-pointer appearance-none checked:bg-emerald-500 checked:border-emerald-500"
+                                />
+                                {val && (
+                                    <svg className="w-3.5 h-3.5 absolute text-white pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
+                                )}
+                            </div>
+                            <div className="flex flex-col">
+                                <span className="text-sm font-medium text-neutral-200 group-hover:text-emerald-400 transition-colors">{p.name}</span>
+                                {p.description && <span className="text-xs text-neutral-500">{p.description}</span>}
+                            </div>
+                        </label>
+                    </div>
+                );
+            default:
+                return null;
+        }
+    };
+
+    const mainSections = modelConfig?.sections?.filter((s: any) => s.name !== 'Cores') ?? [];
+    const colorsSection = modelConfig?.sections?.find((s: any) => s.name === 'Cores');
+
+    const renderAccordionSection = (section: any) => {
+        const isOpen = openSections[section.name] ?? true;
+        return (
+            <div key={section.name} className={`border border-neutral-800 rounded-lg ${isOpen ? 'overflow-visible' : 'overflow-hidden'}`}>
+                <button
+                    type="button"
+                    onClick={() => toggleSection(section.name)}
+                    className="w-full flex items-center justify-between px-3 py-2.5 bg-neutral-900 hover:bg-neutral-800 transition-colors text-left"
+                >
+                    <span className="text-xs font-semibold text-neutral-400 uppercase tracking-widest">
+                        {section.name}
+                    </span>
+                    <ChevronDown
+                        className={`w-4 h-4 text-neutral-500 transition-transform duration-200 ${
+                            isOpen ? 'rotate-0' : '-rotate-90'
+                        }`}
+                    />
+                </button>
+                {isOpen && (
+                    <div className="px-3 pb-3 pt-2 space-y-4 bg-neutral-950 rounded-b-lg">
+                        {section.parameters?.map(renderParam)}
+                    </div>
+                )}
+            </div>
+        );
+    };
+
+    const [isModalOpen, setIsModalOpen] = useState(false);
+
+    // Controle de tamanho da arte
+    const [artHeight, setArtHeight] = useState(70);
+    const [artWidth, setArtWidth] = useState(70);
+    const [lockAspectRatio, setLockAspectRatio] = useState(true);
+    const [svgAspectRatio, setSvgAspectRatio] = useState(1.0); // width / height
+
+    // Formatos e variáveis calculadas
+    type CutterShape = 'silhouette' | 'square' | 'circle' | 'rectangle' | 'hexagon';
+    const [cutterShape, setCutterShape] = useState<CutterShape>('silhouette');
+    const [cutterW, setCutterW] = useState(78);
+    const [cutterH, setCutterH] = useState(78);
+
+    // Pega a margem da silhueta do estado dinâmico (usa 4.0 como fallback se não carregou)
+    const currentSilhouetteExp = dynamicParams['silhouette_exp'] ?? 4.0;
+
+    const minCutterW = artWidth + currentSilhouetteExp * 2;
+    const minCutterH = artHeight + currentSilhouetteExp * 2;
+
+    const artDiag = Math.sqrt(artWidth * artWidth + artHeight * artHeight);
+    const autoSquareSize = Math.max(artWidth, artHeight) + currentSilhouetteExp * 2;
+    const autoCircleHexSize = artDiag + currentSilhouetteExp * 2;
+    const isAutoShape = cutterShape === 'square' || cutterShape === 'circle' || cutterShape === 'hexagon';
+    const autoSize = cutterShape === 'square' ? autoSquareSize : autoCircleHexSize;
+
+    const effectiveCutterW = isAutoShape ? autoSize : Math.max(cutterW, minCutterW);
+    const effectiveCutterH = isAutoShape ? autoSize : Math.max(cutterH, minCutterH);
+
+
+    const [svgPreview, setSvgPreview] = useState<{
+        originalSvg: string;
+        thickenedSvg: string;
+        silhouetteSvg: string;
+    } | null>(null);
+
+    // Ref for hidden file input — allows programmatic trigger AND value-reset (fixes same-filename bug)
+    const fileInputRef = useRef<HTMLInputElement>(null);
+    const triggerFilePicker = () => {
+        if (fileInputRef.current) {
+            fileInputRef.current.value = ''; // reset so same filename triggers onChange
+            fileInputRef.current.click();
+        }
+    };
+
+    const handleSvgUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        setSvgFile(file);
+
+        const reader = new FileReader();
+        reader.onload = async (evt) => {
+            const text = evt.target?.result as string;
+            if (!text) return;
+            setSvgText(text);
+
+            // Extract natural SVG dimensions for aspect ratio
+            try {
+                const parser = new DOMParser();
+                const doc = parser.parseFromString(text, 'image/svg+xml');
+                const svgEl = doc.querySelector('svg');
+                let natW = 0, natH = 0;
+                if (svgEl) {
+                    const vb = svgEl.getAttribute('viewBox');
+                    if (vb) {
+                        const parts = vb.split(/[\s,]+/).map(Number);
+                        if (parts.length >= 4) { natW = parts[2]; natH = parts[3]; }
+                    }
+                    if (!natW) natW = parseFloat(svgEl.getAttribute('width') || '0');
+                    if (!natH) natH = parseFloat(svgEl.getAttribute('height') || '0');
+                }
+                if (natW > 0 && natH > 0) {
+                    const ratio = natW / natH;
+                    setSvgAspectRatio(ratio);
+                    setArtHeight(70);
+                    setArtWidth(Math.round(70 * ratio * 10) / 10);
+                }
+            } catch (_) { }
+
+            try {
+                // Ao carregar pela primeira vez, usa o valor atual do estado dinâmico (fallback 0.5)
+                const currentLineOffset = dynamicParams['line_offset'] ?? 0.5;
+                const processed = await processSvgFile(text, currentLineOffset, 3.0);
+                setSvgPreview(processed);
+                setIsModalOpen(true);
+            } catch (err) {
+                console.error("SVG Processing Error:", err);
+                alert("Erro ao processar o arquivo SVG. Tem certeza que há geometria vetorial?");
+            }
+        };
+        reader.readAsText(file);
+    };
+
+    const handleHeightChange = (val: number) => {
+        setArtHeight(val);
+        if (lockAspectRatio) setArtWidth(Math.round(val * svgAspectRatio * 10) / 10);
+    };
+
+    const handleWidthChange = (val: number) => {
+        setArtWidth(val);
+        if (lockAspectRatio) setArtHeight(Math.round(val / svgAspectRatio * 10) / 10);
+    };
+
+    const handleModalConfirm = (processed: any, finalThickness: number) => {
+        setSvgPreview(processed);
+        handleDynamicParamChange('line_offset', finalThickness); // Atualiza o parâmetro dinâmico
+        setIsModalOpen(false);
+    };
+
+    const handleGenerateClick = async () => {
+        if (!svgPreview) return;
+        setIsGenerating(true);
+        setCarimbBaseUrl(null);
+        setCarimbArteUrl(null);
+        setCortadorUrl(null);
+        setTmfUrl(null);
+        try {
+            const formData = new FormData();
+            const linhasBlob = new Blob([svgPreview.thickenedSvg], { type: 'image/svg+xml' });
+            const silhuetaBlob = new Blob([svgPreview.silhouetteSvg], { type: 'image/svg+xml' });
+
+            formData.append('linhas_svg', linhasBlob, 'linhas.svg');
+            formData.append('silhueta_svg', silhuetaBlob, 'silhueta.svg');
+
+            formData.append('art_width', artWidth.toString());
+            formData.append('art_height', artHeight.toString());
+
+            // Envia todos os parâmetros dinâmicos lidos do config.json
+            Object.entries(dynamicParams).forEach(([k, v]) => {
+                if (v !== undefined && v !== null) {
+                    formData.append(k, String(v));
+                }
+            });
+
+            const res = await axios.post('http://localhost:8000/api/generate/ponteira_lapis_svg', formData);
+
+            if (res.data?.files) {
+                const base = 'http://localhost:8000';
+                if (res.data.files.base) setCarimbBaseUrl(`${base}${res.data.files.base}`);
+                if (res.data.files.svg) setCarimbArteUrl(`${base}${res.data.files.svg}`);
+                if (res.data.files['3mf']) setTmfUrl(`${base}${res.data.files['3mf']}`);
+            }
+        } catch (err) {
+            console.error("Error generating piecess:", err);
+            alert("Falha ao gerar o modelo 3D.");
+        } finally {
+            setIsGenerating(false);
+        }
+    };
+
+    return (
+        <div className="min-h-screen bg-neutral-900 text-neutral-200 flex flex-col font-sans">
+            <SvgPreviewModal
+                isOpen={isModalOpen}
+                onClose={() => setIsModalOpen(false)}
+                onConfirm={handleModalConfirm}
+                onLoadAnother={() => { setIsModalOpen(false); triggerFilePicker(); }}
+                svgText={svgText}
+                initialThickness={dynamicParams['line_offset'] ?? 0.5}
+            />
+
+            {/* Header Pipeline Status */}
+            <header className="flex items-center justify-between px-6 py-4 bg-neutral-950 border-b border-neutral-800">
+                <Link to="/" className="flex items-center gap-3 text-emerald-500 font-bold text-xl tracking-wide hover:text-emerald-400 transition-colors">
+                    <Scissors className="w-6 h-6" />
+                    <span>TRECOLETES 3D</span>
+                </Link>
+                <div className="text-sm text-neutral-500 flex items-center gap-2">
+                    <Link to="/" className="hover:text-emerald-400 transition-colors flex items-center gap-1"><Home className="w-4 h-4" /> Vitrine</Link>
+                    <ChevronRight className="w-3 h-3" />
+                    <span className="text-neutral-400">Produtos</span>
+                    <ChevronRight className="w-3 h-3" />
+                    <strong className="text-emerald-400">Gerador: Ponteira Lapis SVG</strong>
+                </div>
+            </header>
+
+            {/* Main App Layout */}
+            <main className="flex-1 flex overflow-hidden">
+
+                {/* Left Sidebar Controls */}
+                <aside className="w-96 flex-shrink-0 bg-neutral-900 border-r border-neutral-800 flex flex-col overflow-y-auto">
+                    <div className="p-6 space-y-8">
+
+                        {/* Section: Upload SVG */}
+                        <div className="space-y-3">
+                            <h2 className="text-sm font-semibold text-neutral-400 uppercase tracking-widest flex items-center gap-2">
+                                <Upload className="w-4 h-4" /> Arte Principal
+                            </h2>
+
+                            {/* Hidden file input — triggered programmatically */}
+                            <input
+                                ref={fileInputRef}
+                                type="file"
+                                className="hidden"
+                                accept=".svg"
+                                onChange={handleSvgUpload}
+                            />
+
+                            {/* Upload area: if SVG loaded → reopen modal; else → open picker */}
+                            {svgPreview ? (
+                                <button
+                                    onClick={() => setIsModalOpen(true)}
+                                    className="w-full block border-2 border-emerald-700/50 hover:border-emerald-500 rounded-lg p-4 text-center cursor-pointer transition-colors bg-neutral-950/50"
+                                >
+                                    <span className="text-emerald-400 font-medium text-sm">{svgFile ? svgFile.name : 'Arte carregada'}</span>
+                                </button>
+                            ) : (
+                                <button
+                                    onClick={triggerFilePicker}
+                                    className="w-full block border-2 border-dashed border-neutral-700 hover:border-emerald-500 rounded-lg p-4 text-center cursor-pointer transition-colors bg-neutral-950/50"
+                                >
+                                    <span className="text-emerald-400 font-medium text-sm">Selecionar arquivo SVG</span>
+                                </button>
+                            )}
+
+                            {/* SVG Preview thumbnail */}
+                            {svgPreview && (
+                                <div className="relative rounded-lg overflow-hidden border border-neutral-700" style={{ backgroundColor: '#f0ebe3' }}>
+                                    <div
+                                        dangerouslySetInnerHTML={{ __html: svgPreview.thickenedSvg }}
+                                        className="w-full [&>svg]:w-full [&>svg]:h-auto [&>svg]:max-h-48 [&>svg]:object-contain p-2"
+                                    />
+                                    <button
+                                        onClick={() => setIsModalOpen(true)}
+                                        className="absolute top-2 right-2 text-xs bg-neutral-900/80 hover:bg-emerald-700 text-neutral-300 hover:text-white px-2 py-1 rounded border border-neutral-700 transition-colors backdrop-blur-sm"
+                                    >
+                                        Editar
+                                    </button>
+                                </div>
+                            )}
+
+                            {/* Section: Parameters */}
+                            <div className="space-y-4">
+                                <h2 className="text-sm font-semibold text-neutral-400 uppercase tracking-widest flex items-center gap-2">
+                                    <Sliders className="w-4 h-4" /> Configurações
+                                </h2>
+
+                                {/* Art Size */}
+                                <div className="space-y-2">
+                                    <label className="text-sm text-neutral-300 font-medium">Tamanho da Arte</label>
+                                    <div className="flex items-center gap-2">
+                                        <div className="flex-1 space-y-1">
+                                            <span className="text-xs text-neutral-500">Largura</span>
+                                            <div className="flex items-center gap-1">
+                                                <input
+                                                    type="number"
+                                                    min="10" max="300" step="1"
+                                                    value={artWidth}
+                                                    onChange={e => handleWidthChange(parseFloat(e.target.value) || 0)}
+                                                    className="w-full bg-neutral-800 border border-neutral-700 rounded px-2 py-1.5 text-sm text-white focus:border-emerald-500 focus:outline-none"
+                                                />
+                                                <span className="text-xs text-neutral-500">mm</span>
+                                            </div>
+                                        </div>
+
+                                        {/* Lock aspect ratio */}
+                                        <button
+                                            onClick={() => setLockAspectRatio(l => !l)}
+                                            title={lockAspectRatio ? 'Travar proporção (ativo)' : 'Travar proporção (inativo)'}
+                                            className={`self-center mt-4 p-1.5 rounded border transition-colors ${lockAspectRatio ? 'bg-emerald-700 border-emerald-500 text-white' : 'bg-neutral-800 border-neutral-700 text-neutral-500 hover:border-neutral-500'}`}
+                                        >
+                                            {lockAspectRatio ? (
+                                                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd" /></svg>
+                                            ) : (
+                                                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path d="M10 2a5 5 0 00-5 5v2a2 2 0 00-2 2v5a2 2 0 002 2h10a2 2 0 002-2v-5a2 2 0 00-2-2H7V7a3 3 0 015.905-.75 1 1 0 001.937-.5A5.002 5.002 0 0010 2z" /></svg>
+                                            )}
+                                        </button>
+
+                                        <div className="flex-1 space-y-1">
+                                            <span className="text-xs text-neutral-500">Altura</span>
+                                            <div className="flex items-center gap-1">
+                                                <input
+                                                    type="number"
+                                                    min="10" max="300" step="1"
+                                                    value={artHeight}
+                                                    onChange={e => handleHeightChange(parseFloat(e.target.value) || 0)}
+                                                    className="w-full bg-neutral-800 border border-neutral-700 rounded px-2 py-1.5 text-sm text-white focus:border-emerald-500 focus:outline-none"
+                                                />
+                                                <span className="text-xs text-neutral-500">mm</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    {lockAspectRatio && <p className="text-xs text-emerald-600/70">🔒 Proporção travada — {svgAspectRatio.toFixed(2)}:1</p>}
+                                </div>
+
+                                {/* Parâmetros Principais e Seções (Server-Driven) */}
+                                {modelConfig?.parameters && (
+                                    <div className="space-y-4 pb-1">
+                                        {modelConfig.parameters.map(renderParam)}
+                                    </div>
+                                )}
+                                {mainSections.map(renderAccordionSection)}
+                                {colorsSection && renderAccordionSection(colorsSection)}
+                            </div>
+
+                        </div>
+                    </div>
+
+                    {/* Generate Button Fixed Bottom */}
+                    <div className="mt-auto p-4 border-t border-neutral-800 bg-neutral-950">
+                        <button
+                            onClick={handleGenerateClick}
+                            disabled={!svgFile || isGenerating}
+                            className="w-full py-3 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold rounded shadow-lg shadow-emerald-500/20 transition-all font-sans"
+                        >
+                            {isGenerating ? 'Gerando OpenSCAD...' : 'Gerar Peças 3D'}
+                        </button>
+                    </div>
+                </aside>
+
+                {/* Right Viewer Canvas */}
+                <section className="flex-1 p-4 relative min-w-0 min-h-0 flex flex-col gap-3">
+                    <div className="flex-1 relative min-h-0">
+                        <div className="absolute inset-0">
+                            <Viewer3D
+                                carimbBaseUrl={carimbBaseUrl}
+                                carimbArteUrl={carimbArteUrl}
+                                cortadorUrl={cortadorUrl}
+                                isGenerating={isGenerating}
+                                artColor={(dynamicParams['letters_color'] as string) ?? '#FFFFFF'}
+                                modelColor={(dynamicParams['base_color'] as string) ?? '#1B40D1'}
+                            />
+                        </div>
+                    </div>
+                    {tmfUrl && (
+                        <div className="flex-shrink-0 flex justify-center">
+                            <button
+                                onClick={() => downloadBlob(tmfUrl, 'ponteira_lapis_svg_all.3mf')}
+                                className="flex items-center gap-2 px-6 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold rounded-lg shadow-lg shadow-emerald-900/40 transition-colors text-sm"
+                            >
+                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                                Baixar 3MF Multicolor
+                            </button>
+                        </div>
+                    )}
+                </section>
+
+            </main>
+        </div>
+    );
+}
+
 function TestHolesVertical() {
     const [holes, setHoles] = React.useState<number[]>([5, 5.2]);
     const [margin, setMargin] = React.useState(2);
@@ -1440,6 +1947,16 @@ function Vitrine() {
                             Crie letreiros 3D multicolor com texto em duas linhas, escolha de fonte, cores e furação para chaveiro ou topper de bolo.
                         </p>
                     </Link>
+
+                    <Link to="/gerador/ponteira_lapis_svg" className="group bg-neutral-950 border border-neutral-800 p-8 rounded-2xl hover:border-blue-500 transition-all hover:shadow-[0_0_30px_rgba(59,130,246,0.15)] block">
+                        <div className="w-16 h-16 bg-neutral-900 border border-neutral-800 text-blue-500 rounded-xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
+                            <Upload className="w-8 h-8" />
+                        </div>
+                        <h2 className="text-2xl font-bold group-hover:text-blue-400 transition-colors mb-3">Ponteira Lápis SVG</h2>
+                        <p className="text-neutral-500 leading-relaxed text-sm">
+                            Gere ponteiras de lápis personalizadas a partir de arquivos SVG em 3D.
+                        </p>
+                    </Link>
                 </div>
             </main>
         </div>
@@ -1452,6 +1969,7 @@ export default function App() {
             <Routes>
                 <Route path="/" element={<Vitrine />} />
                 <Route path="/gerador/cortador_cookie" element={<Generator />} />
+                <Route path="/gerador/ponteira_lapis_svg" element={<PonteiraLapisSvgGenerator />} />
                 <Route path="/gerador/test_holes_vertical" element={<TestHolesVertical />} />
                 <Route path="/gerador/name_topper" element={<NameTopper />} />
             </Routes>
