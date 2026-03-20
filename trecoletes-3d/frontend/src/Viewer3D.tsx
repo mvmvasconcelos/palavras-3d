@@ -72,16 +72,18 @@ export interface Viewer3DProps {
     isGenerating: boolean;
     artColor: string;
     modelColor: string;
+    loadingMessages?: { label: string; detail: string }[];
+    loadingParts?: { id: string; label: string; active: boolean }[];
 }
 
-export default function Viewer3D({ carimbBaseUrl, carimbArteUrl, cortadorUrl, isGenerating, artColor, modelColor }: Viewer3DProps) {
+export default function Viewer3D({ carimbBaseUrl, carimbArteUrl, cortadorUrl, isGenerating, artColor, modelColor, loadingMessages, loadingParts }: Viewer3DProps) {
     const [camInfo, setCamInfo] = useState<CameraInfo | null>(null);
     const [elapsed, setElapsed] = useState(0);
     const [msgIndex, setMsgIndex] = useState(0);
     const fmt = (n: number) => n.toFixed(1);
     const hasModel = carimbBaseUrl || carimbArteUrl || cortadorUrl;
 
-    const MESSAGES = [
+    const activeMessages = loadingMessages || [
         { label: "Enviando arte ao servidor...",     detail: "Normalizando SVG para o OpenSCAD" },
         { label: "Calculando silhueta...",            detail: "Gerando geometria do cortador" },
         { label: "Gerando carimbo base...",           detail: "Extrudando a placa de apoio" },
@@ -102,7 +104,7 @@ export default function Viewer3D({ carimbBaseUrl, carimbArteUrl, cortadorUrl, is
         let step = 0;
         const advance = () => {
             step++;
-            setMsgIndex(i => Math.min(i + 1, MESSAGES.length - 1));
+            setMsgIndex(i => Math.min(i + 1, activeMessages.length - 1));
             if (step < delays.length) {
                 setTimeout(advance, delays[step]);
             }
@@ -110,9 +112,9 @@ export default function Viewer3D({ carimbBaseUrl, carimbArteUrl, cortadorUrl, is
         const first = setTimeout(advance, delays[0]);
 
         return () => { clearInterval(timer); clearTimeout(first); };
-    }, [isGenerating]);
+    }, [isGenerating, activeMessages.length]);
 
-    const msg = MESSAGES[msgIndex];
+    const msg = activeMessages[msgIndex];
 
     return (
         <div className="w-full h-full relative bg-neutral-800 rounded-lg overflow-hidden border border-neutral-700">
@@ -136,11 +138,22 @@ export default function Viewer3D({ carimbBaseUrl, carimbArteUrl, cortadorUrl, is
 
                     {/* Partes + timer */}
                     <div className="flex items-center gap-4 text-xs text-neutral-600">
-                        <span className={carimbBaseUrl ? 'text-emerald-500' : ''}>Base</span>
-                        <span>·</span>
-                        <span className={carimbArteUrl ? 'text-emerald-500' : ''}>Arte</span>
-                        <span>·</span>
-                        <span className={cortadorUrl ? 'text-emerald-500' : ''}>Cortador</span>
+                        {loadingParts ? (
+                            loadingParts.map((part, i) => (
+                                <React.Fragment key={part.id}>
+                                    <span className={part.active ? 'text-emerald-500' : ''}>{part.label}</span>
+                                    {i < loadingParts.length - 1 && <span>·</span>}
+                                </React.Fragment>
+                            ))
+                        ) : (
+                            <>
+                                <span className={carimbBaseUrl ? 'text-emerald-500' : ''}>Base</span>
+                                <span>·</span>
+                                <span className={carimbArteUrl ? 'text-emerald-500' : ''}>Arte</span>
+                                <span>·</span>
+                                <span className={cortadorUrl ? 'text-emerald-500' : ''}>Cortador</span>
+                            </>
+                        )}
                         <span className="ml-3 font-mono text-neutral-700">{elapsed}s</span>
                     </div>
                 </div>

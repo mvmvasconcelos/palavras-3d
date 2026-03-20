@@ -1147,6 +1147,17 @@ function PonteiraLapisSvgGenerator() {
                                 isGenerating={isGenerating}
                                 artColor={(dynamicParams['letters_color'] as string) ?? '#FFFFFF'}
                                 modelColor={(dynamicParams['base_color'] as string) ?? '#1B40D1'}
+                                loadingMessages={[
+                                    { label: "Preparando ponteira...",  detail: "Validando silhueta do SVG" },
+                                    { label: "Gerando base com furo...", detail: "Criando geometria de encaixe para o lápis" },
+                                    { label: "Extrudando arte...",     detail: "Ajustando proporções e relevos" },
+                                    { label: "Montando peças...",       detail: "Unificando STLs e gerando 3MF" },
+                                    { label: "Quase lá...",            detail: "Finalizando modelo paramétrico" }
+                                ]}
+                                loadingParts={[
+                                    { id: 'base', label: 'Base', active: !!carimbBaseUrl },
+                                    { id: 'arte', label: 'Arte', active: !!carimbArteUrl }
+                                ]}
                             />
                         </div>
                     </div>
